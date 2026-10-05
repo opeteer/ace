@@ -6,6 +6,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"runtime"
+	"time"
 
 	"github.com/charmbracelet/lipgloss"
 	"github.com/opeteer/ace/internal/config"
@@ -134,22 +135,18 @@ func installLaravel(cfg *config.ProjectConfig) {
 	}
 
 	if found {
-		fmt.Printf("  %s %s\n", stepInfo, dimText.Render("Running 'composer install' for Laravel 11..."))
-		cmd := exec.Command(compBin, "install", "--no-interaction", "--prefer-dist", "--no-progress", "--no-security-blocking")
+		fmt.Printf("  %s %s\n", stepInfo, dimText.Render("Running 'composer install' for Laravel 11 (live logs enabled)..."))
+		cmd := exec.Command(compBin, "install", "--no-interaction", "--prefer-dist", "--no-security-blocking")
 		cmd.Dir = cfg.TargetPath
-		cmd.Stdout = os.Stdout
-		cmd.Stderr = os.Stderr
-		if err := cmd.Run(); err == nil {
+		if err := RunWithIdleTimeout(cmd, 35*time.Second); err == nil {
 			fmt.Printf("  %s %s\n", stepSuccess, stepName.Render("Installed Composer dependencies"))
 			return
 		}
 
 		// Fallback without --no-security-blocking for older Composer versions
-		cmd = exec.Command(compBin, "install", "--no-interaction", "--prefer-dist", "--no-progress")
+		cmd = exec.Command(compBin, "install", "--no-interaction", "--prefer-dist")
 		cmd.Dir = cfg.TargetPath
-		cmd.Stdout = os.Stdout
-		cmd.Stderr = os.Stderr
-		if err := cmd.Run(); err == nil {
+		if err := RunWithIdleTimeout(cmd, 35*time.Second); err == nil {
 			fmt.Printf("  %s %s\n", stepSuccess, stepName.Render("Installed Composer dependencies"))
 			return
 		}
@@ -162,10 +159,8 @@ func installLaravel(cfg *config.ProjectConfig) {
 		fmt.Printf("  %s %s\n", stepInfo, dimText.Render("Installing dependencies via Docker container..."))
 		absTarget, err := filepath.Abs(cfg.TargetPath)
 		if err == nil {
-			cmd := exec.Command("docker", "run", "--rm", "-v", fmt.Sprintf("%s:/app", absTarget), "-w", "/app", "composer:latest", "composer", "install", "--no-interaction", "--prefer-dist", "--no-progress")
-			cmd.Stdout = os.Stdout
-			cmd.Stderr = os.Stderr
-			if err := cmd.Run(); err == nil {
+			cmd := exec.Command("docker", "run", "--rm", "-v", fmt.Sprintf("%s:/app", absTarget), "-w", "/app", "composer:latest", "composer", "install", "--no-interaction", "--prefer-dist")
+			if err := RunWithIdleTimeout(cmd, 45*time.Second); err == nil {
 				fmt.Printf("  %s %s\n", stepSuccess, stepName.Render("Installed Composer dependencies via containerized Composer"))
 				return
 			}
