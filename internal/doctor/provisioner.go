@@ -223,27 +223,38 @@ func GetAvailableToolNames() []string {
 
 func installComposer(localBin string) error {
 	targetComposer := filepath.Join(localBin, "composer")
+	tempComposer := filepath.Join(localBin, "composer.tmp")
 
+	// GitHub releases CDN is significantly faster and more reliable worldwide than getcomposer.org
 	urls := []string{
-		"https://getcomposer.org/download/latest-stable/composer.phar",
 		"https://github.com/composer/composer/releases/latest/download/composer.phar",
+		"https://getcomposer.org/download/latest-stable/composer.phar",
 		"https://getcomposer.org/composer.phar",
 	}
 
 	var downloadErr error
 	for _, u := range urls {
-		// Prefer curl if available for robust SSL/TLS handling
+		// Prefer curl with IPv4 (-4) and short connect timeout to prevent hanging on broken IPv6 routes
 		if curlPath, err := exec.LookPath("curl"); err == nil {
-			cmd := exec.Command(curlPath, "-fsSL", "-o", targetComposer, u)
+			cmd := exec.Command(curlPath, "-4", "-fsSL", "--connect-timeout", "10", "-o", tempComposer, u)
 			if err := cmd.Run(); err == nil {
-				downloadErr = nil
-				break
+				// Verify the downloaded file is a valid executable Phar
+				if vCmd := exec.Command("php", tempComposer, "--version"); vCmd.Run() == nil {
+					_ = os.Rename(tempComposer, targetComposer)
+					_ = os.Chmod(targetComposer, 0755)
+					return nil
+				}
+				_ = os.Remove(tempComposer)
 			}
 		}
 
-		if err := downloadFile(u, targetComposer); err == nil {
-			downloadErr = nil
-			break
+		if err := downloadFile(u, tempComposer); err == nil {
+			if vCmd := exec.Command("php", tempComposer, "--version"); vCmd.Run() == nil {
+				_ = os.Rename(tempComposer, targetComposer)
+				_ = os.Chmod(targetComposer, 0755)
+				return nil
+			}
+			_ = os.Remove(tempComposer)
 		} else {
 			downloadErr = err
 		}
@@ -253,11 +264,7 @@ func installComposer(localBin string) error {
 		return fmt.Errorf("failed to download composer: %w", downloadErr)
 	}
 
-	if err := os.Chmod(targetComposer, 0755); err != nil {
-		return fmt.Errorf("failed to make composer executable: %w", err)
-	}
-
-	return nil
+	return fmt.Errorf("downloaded composer was corrupted or failed verification")
 }
 
 func installBun(localBin string) error {

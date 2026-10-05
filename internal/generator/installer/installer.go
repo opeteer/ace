@@ -135,16 +135,26 @@ func installLaravel(cfg *config.ProjectConfig) {
 
 	if found {
 		fmt.Printf("  %s %s\n", stepInfo, dimText.Render("Running 'composer install' for Laravel 11..."))
-		cmd := exec.Command(compBin, "install", "--no-interaction", "--prefer-dist", "--no-progress")
+		cmd := exec.Command(compBin, "install", "--no-interaction", "--prefer-dist", "--no-progress", "--no-security-blocking")
 		cmd.Dir = cfg.TargetPath
 		cmd.Stdout = os.Stdout
 		cmd.Stderr = os.Stderr
 		if err := cmd.Run(); err == nil {
 			fmt.Printf("  %s %s\n", stepSuccess, stepName.Render("Installed Composer dependencies"))
 			return
-		} else {
-			fmt.Printf("  %s %s\n", stepWarn, dimText.Render("Host 'composer install' skipped or failed. Checking Docker fallback..."))
 		}
+
+		// Fallback without --no-security-blocking for older Composer versions
+		cmd = exec.Command(compBin, "install", "--no-interaction", "--prefer-dist", "--no-progress")
+		cmd.Dir = cfg.TargetPath
+		cmd.Stdout = os.Stdout
+		cmd.Stderr = os.Stderr
+		if err := cmd.Run(); err == nil {
+			fmt.Printf("  %s %s\n", stepSuccess, stepName.Render("Installed Composer dependencies"))
+			return
+		}
+
+		fmt.Printf("  %s %s\n", stepWarn, dimText.Render("Host 'composer install' skipped or failed. Checking Docker fallback..."))
 	}
 
 	// Docker fallback: if Docker is available and enabled, run composer install inside container to populate vendor/

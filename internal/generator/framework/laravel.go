@@ -71,7 +71,17 @@ func ScaffoldLaravel(cfg *config.ProjectConfig) error {
         "post-autoload-dump": [
             "Illuminate\\Foundation\\ComposerScripts::postAutoloadDump"
         ]
-    }
+    },
+    "config": {
+        "optimize-autoloader": true,
+        "preferred-install": "dist",
+        "sort-packages": true,
+        "audit": {
+            "block": false
+        }
+    },
+    "minimum-stability": "stable",
+    "prefer-stable": true
 }
 `, cfg.Name),
 
