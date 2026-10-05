@@ -43,7 +43,15 @@ ace showtime
 ace showtime --mono
 ```
 
-### 1. Interactive Wizard
+### 1. Environment Readiness & Toolchain Doctor
+Audit your local environment to see what runtimes, compilers, package managers, and container tools are installed:
+```bash
+ace doctor
+# or output machine-readable JSON for CI/scripts:
+ace doctor --json
+```
+
+### 2. Interactive Wizard
 Run without flags to open the interactive selection wizard:
 ```bash
 ace new
@@ -99,6 +107,7 @@ ace create my-app
 | `--ci` | | CI/CD workflow (`github`, `gitlab`, `none`) | `none` |
 | `--protocol` | | API protocol (`rest`, `graphql`, `grpc`, `websocket`) | `rest` |
 | `--no-git` | | Skip git repository initialization | `false` (git init enabled) |
+| `--no-install` | | Skip automated dependency installation and sync hooks | `false` (auto-install enabled) |
 
 ---
 

@@ -31,6 +31,7 @@ func TestScaffoldLaravelPostgresFull(t *testing.T) {
 		Proxy:      config.ProxyNginx,
 		CI:         config.CIGitHub,
 		NoGit:      false,
+		NoInstall:  true,
 	}
 
 	engine := generator.NewEngine(cfg)
@@ -90,6 +91,7 @@ func TestScaffoldFastAPIPostgres(t *testing.T) {
 		Proxy:      config.ProxyNginx,
 		CI:         config.CIGitHub,
 		NoGit:      true,
+		NoInstall:  true,
 	}
 
 	engine := generator.NewEngine(cfg)
@@ -137,6 +139,7 @@ func TestScaffoldNextJSPostgres(t *testing.T) {
 		Database:   db,
 		Docker:     true,
 		NoGit:      true,
+		NoInstall:  true,
 	}
 
 	engine := generator.NewEngine(cfg)
@@ -172,6 +175,7 @@ func TestScaffoldFiberPostgres(t *testing.T) {
 		Database:   db,
 		Docker:     true,
 		NoGit:      true,
+		NoInstall:  true,
 	}
 
 	engine := generator.NewEngine(cfg)
@@ -202,6 +206,7 @@ func TestBug03NestedPathDBName(t *testing.T) {
 		Framework:  fw,
 		Database:   db,
 		NoGit:      true,
+		NoInstall:  true,
 	}
 	if err := cfg.Validate(); err != nil {
 		t.Fatalf("cfg.Validate() failed: %v", err)
@@ -241,6 +246,7 @@ func TestBug04SpacesInProjectName(t *testing.T) {
 		Framework:  fw,
 		Database:   db,
 		NoGit:      true,
+		NoInstall:  true,
 	}
 	if err := cfg.Validate(); err != nil {
 		t.Fatalf("cfg.Validate() failed: %v", err)
@@ -279,6 +285,7 @@ func TestBug06NginxAutoDocker(t *testing.T) {
 		Proxy:      config.ProxyNginx,
 		Docker:     false, // intentionally false to test auto-enable
 		NoGit:      true,
+		NoInstall:  true,
 	}
 	if err := cfg.Validate(); err != nil {
 		t.Fatalf("cfg.Validate() failed: %v", err)
