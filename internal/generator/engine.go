@@ -12,6 +12,7 @@ import (
 	"github.com/opeteer/ace/internal/generator/database"
 	"github.com/opeteer/ace/internal/generator/devops"
 	"github.com/opeteer/ace/internal/generator/framework"
+	"github.com/opeteer/ace/internal/generator/installer"
 	"github.com/opeteer/ace/internal/generator/proxy"
 )
 
@@ -78,42 +79,17 @@ func (e *Engine) Execute() error {
 		fmt.Printf("  %s %s\n", stepSuccess, stepName.Render("Generated GitHub Actions CI workflow"))
 	}
 
-	// 7. Git Initialization
+	// 7. Automated Dependency Provisioning & Sync Hooks
+	installer.Run(e.cfg)
+
+	// 8. Git Initialization
 	if !e.cfg.NoGit {
 		if err := e.initGit(); err == nil {
 			fmt.Printf("  %s %s\n", stepSuccess, stepName.Render("Initialized Git repository"))
 		}
 	}
 
-	// 8. Toolchain Integration Check (Host tools & Docker build readiness)
-	e.checkBuildReadiness()
-
 	return nil
-}
-
-func (e *Engine) checkBuildReadiness() {
-	switch e.cfg.Framework.ID {
-	case "laravel":
-		if _, err := exec.LookPath("composer"); err == nil {
-			fmt.Printf("  %s %s\n", stepSuccess, stepName.Render("Detected Composer on host (ready to run 'composer install')"))
-		} else if e.cfg.Docker {
-			fmt.Printf("  %s %s\n", stepSuccess, stepName.Render("Containerized Composer & entrypoint pre-configured (ready for 'docker compose up --build')"))
-		} else {
-			fmt.Printf("  ! %s\n", lipgloss.NewStyle().Foreground(lipgloss.Color("#E5A93C")).Render("Note: Composer is not on host. Install Composer or re-run with --docker for containerized builds."))
-		}
-	case "next":
-		if _, err := exec.LookPath("npm"); err == nil {
-			fmt.Printf("  %s %s\n", stepSuccess, stepName.Render("Detected Node.js & npm on host (ready for 'npm install')"))
-		}
-	case "fastapi":
-		if _, err := exec.LookPath("python3"); err == nil {
-			fmt.Printf("  %s %s\n", stepSuccess, stepName.Render("Detected Python on host (ready for virtualenv & pip)"))
-		}
-	case "fiber":
-		if _, err := exec.LookPath("go"); err == nil {
-			fmt.Printf("  %s %s\n", stepSuccess, stepName.Render("Detected Go toolchain on host (ready for 'go run')"))
-		}
-	}
 }
 
 func (e *Engine) prepareDirectory() error {
