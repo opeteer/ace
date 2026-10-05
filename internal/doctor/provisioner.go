@@ -222,32 +222,41 @@ func GetAvailableToolNames() []string {
 // ---- Recipe Implementations ----
 
 func installComposer(localBin string) error {
-	// Composer requires PHP CLI on host
-	phpPath, err := exec.LookPath("php")
-	if err != nil {
-		return fmt.Errorf("PHP is required to install Composer. Please install PHP first ('ace install php')")
-	}
-
-	tempDir, err := os.MkdirTemp("", "composer-installer-*")
-	if err != nil {
-		return err
-	}
-	defer os.RemoveAll(tempDir)
-
-	setupFile := filepath.Join(tempDir, "composer-setup.php")
-	if err := downloadFile("https://getcomposer.org/installer", setupFile); err != nil {
-		return fmt.Errorf("failed to download composer installer: %w", err)
-	}
-
 	targetComposer := filepath.Join(localBin, "composer")
-	cmd := exec.Command(phpPath, setupFile, "--install-dir="+localBin, "--filename=composer")
-	cmd.Stdout = os.Stdout
-	cmd.Stderr = os.Stderr
-	if err := cmd.Run(); err != nil {
-		return fmt.Errorf("failed executing composer installer: %w", err)
+
+	urls := []string{
+		"https://getcomposer.org/download/latest-stable/composer.phar",
+		"https://github.com/composer/composer/releases/latest/download/composer.phar",
+		"https://getcomposer.org/composer.phar",
 	}
 
-	_ = os.Chmod(targetComposer, 0755)
+	var downloadErr error
+	for _, u := range urls {
+		// Prefer curl if available for robust SSL/TLS handling
+		if curlPath, err := exec.LookPath("curl"); err == nil {
+			cmd := exec.Command(curlPath, "-fsSL", "-o", targetComposer, u)
+			if err := cmd.Run(); err == nil {
+				downloadErr = nil
+				break
+			}
+		}
+
+		if err := downloadFile(u, targetComposer); err == nil {
+			downloadErr = nil
+			break
+		} else {
+			downloadErr = err
+		}
+	}
+
+	if downloadErr != nil {
+		return fmt.Errorf("failed to download composer: %w", downloadErr)
+	}
+
+	if err := os.Chmod(targetComposer, 0755); err != nil {
+		return fmt.Errorf("failed to make composer executable: %w", err)
+	}
+
 	return nil
 }
 
@@ -423,8 +432,14 @@ func runSudoOrCommand(bin string, args []string) error {
 }
 
 func downloadFile(url, destPath string) error {
-	client := &http.Client{Timeout: 60 * time.Second}
-	resp, err := client.Get(url)
+	client := &http.Client{Timeout: 90 * time.Second}
+	req, err := http.NewRequest("GET", url, nil)
+	if err != nil {
+		return err
+	}
+	req.Header.Set("User-Agent", "Mozilla/5.0 (compatible; AceCLI/0.1.0)")
+
+	resp, err := client.Do(req)
 	if err != nil {
 		return err
 	}

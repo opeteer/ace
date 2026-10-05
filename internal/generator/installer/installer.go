@@ -125,35 +125,62 @@ func InstallDirectory(targetDir string) error {
 }
 
 func installLaravel(cfg *config.ProjectConfig) {
-	if _, err := exec.LookPath("composer"); err == nil {
-		fmt.Printf("  %s %s\n", stepInfo, dimText.Render("Running 'composer install' for Laravel 11..."))
-		cmd := exec.Command("composer", "install", "--no-interaction", "--prefer-dist", "--no-progress")
-		cmd.Dir = cfg.TargetPath
-		if err := cmd.Run(); err == nil {
-			fmt.Printf("  %s %s\n", stepSuccess, stepName.Render("Installed Composer dependencies"))
-		} else {
-			fmt.Printf("  %s %s\n", stepWarn, dimText.Render("Composer install skipped or offline. Run 'composer install'."))
-		}
-	} else if doctor.IsToolInstalled("php") {
+	compBin, found := findComposerBinary()
+	if !found {
 		fmt.Printf("  %s %s\n", stepInfo, dimText.Render("Composer not found on host. Downloading Composer..."))
 		if err := doctor.InstallSpecificTool("composer"); err == nil {
-			localBin, _ := doctor.GetUserLocalBin()
-			compBin := filepath.Join(localBin, "composer")
-			cmd := exec.Command(compBin, "install", "--no-interaction", "--prefer-dist", "--no-progress")
-			cmd.Dir = cfg.TargetPath
+			compBin, found = findComposerBinary()
+		}
+	}
+
+	if found {
+		fmt.Printf("  %s %s\n", stepInfo, dimText.Render("Running 'composer install' for Laravel 11..."))
+		cmd := exec.Command(compBin, "install", "--no-interaction", "--prefer-dist", "--no-progress")
+		cmd.Dir = cfg.TargetPath
+		cmd.Stdout = os.Stdout
+		cmd.Stderr = os.Stderr
+		if err := cmd.Run(); err == nil {
+			fmt.Printf("  %s %s\n", stepSuccess, stepName.Render("Installed Composer dependencies"))
+			return
+		} else {
+			fmt.Printf("  %s %s\n", stepWarn, dimText.Render("Host 'composer install' skipped or failed. Checking Docker fallback..."))
+		}
+	}
+
+	// Docker fallback: if Docker is available and enabled, run composer install inside container to populate vendor/
+	if cfg.Docker && doctor.IsToolInstalled("docker") {
+		fmt.Printf("  %s %s\n", stepInfo, dimText.Render("Installing dependencies via Docker container..."))
+		absTarget, err := filepath.Abs(cfg.TargetPath)
+		if err == nil {
+			cmd := exec.Command("docker", "run", "--rm", "-v", fmt.Sprintf("%s:/app", absTarget), "-w", "/app", "composer:latest", "composer", "install", "--no-interaction", "--prefer-dist", "--no-progress")
+			cmd.Stdout = os.Stdout
+			cmd.Stderr = os.Stderr
 			if err := cmd.Run(); err == nil {
-				fmt.Printf("  %s %s\n", stepSuccess, stepName.Render("Installed Composer dependencies"))
+				fmt.Printf("  %s %s\n", stepSuccess, stepName.Render("Installed Composer dependencies via containerized Composer"))
 				return
 			}
 		}
-		if cfg.Docker {
-			fmt.Printf("  %s %s\n", stepSuccess, stepName.Render("Containerized Composer pre-configured (ready for 'docker compose up --build')"))
-		}
-	} else if cfg.Docker {
+	}
+
+	if cfg.Docker {
 		fmt.Printf("  %s %s\n", stepSuccess, stepName.Render("Containerized Composer pre-configured (ready for 'docker compose up --build')"))
 	} else {
 		fmt.Printf("  %s %s\n", stepWarn, dimText.Render("Composer not found on host. Run 'ace install composer' or use --docker."))
 	}
+}
+
+func findComposerBinary() (string, bool) {
+	if p, err := exec.LookPath("composer"); err == nil {
+		return p, true
+	}
+	home, err := os.UserHomeDir()
+	if err == nil {
+		localComp := filepath.Join(home, ".local", "bin", "composer")
+		if stat, err := os.Stat(localComp); err == nil && !stat.IsDir() {
+			return localComp, true
+		}
+	}
+	return "", false
 }
 
 func installNode(cfg *config.ProjectConfig) {
