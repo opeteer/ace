@@ -279,12 +279,28 @@ func injectNodeRedis(cfg *config.ProjectConfig) error {
 	if pkgBytes, err := os.ReadFile(pkgPath); err == nil {
 		pkgStr := string(pkgBytes)
 		if !strings.Contains(pkgStr, `"ioredis"`) {
-			pkgStr = strings.Replace(
-				pkgStr,
-				`"dependencies": {`,
-				"\"dependencies\": {\n    \"ioredis\": \"^5.4.1\",",
-				1,
-			)
+			if !strings.Contains(pkgStr, `"dependencies": {`) {
+				if strings.Contains(pkgStr, `"devDependencies": {`) {
+					pkgStr = strings.Replace(pkgStr, `"devDependencies": {`, "\"dependencies\": {\n  },\n  \"devDependencies\": {", 1)
+				} else {
+					last := strings.LastIndex(pkgStr, "}")
+					if last != -1 {
+						pkgStr = pkgStr[:last] + ",\n  \"dependencies\": {\n  }\n}"
+					}
+				}
+			}
+			if strings.Contains(pkgStr, `"dependencies": {}`) {
+				pkgStr = strings.Replace(pkgStr, `"dependencies": {}`, "\"dependencies\": {\n    \"ioredis\": \"^5.4.1\"\n  }", 1)
+			} else if strings.Contains(pkgStr, "\"dependencies\": {\n  }") {
+				pkgStr = strings.Replace(pkgStr, "\"dependencies\": {\n  }", "\"dependencies\": {\n    \"ioredis\": \"^5.4.1\"\n  }", 1)
+			} else {
+				pkgStr = strings.Replace(
+					pkgStr,
+					`"dependencies": {`,
+					"\"dependencies\": {\n    \"ioredis\": \"^5.4.1\",",
+					1,
+				)
+			}
 			_ = os.WriteFile(pkgPath, []byte(pkgStr), 0644)
 		}
 	}

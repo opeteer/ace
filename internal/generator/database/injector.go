@@ -54,14 +54,12 @@ func appendToEnv(basePath, content string) error {
 	envExampleFile := filepath.Join(basePath, ".env.example")
 
 	for _, file := range []string{envFile, envExampleFile} {
-		if _, err := os.Stat(file); err == nil {
-			f, err := os.OpenFile(file, os.O_APPEND|os.O_WRONLY, 0644)
-			if err != nil {
-				return err
-			}
-			_, _ = f.WriteString("\n" + strings.TrimSpace(content) + "\n")
-			_ = f.Close()
+		f, err := os.OpenFile(file, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644)
+		if err != nil {
+			return err
 		}
+		_, _ = f.WriteString("\n" + strings.TrimSpace(content) + "\n")
+		_ = f.Close()
 	}
 	return nil
 }

@@ -117,6 +117,37 @@ func InjectDriverManifest(cfg *config.ProjectConfig, dbID, host string) error {
 			_ = os.WriteFile(cargo, []byte(s), 0644)
 		}
 
+	case "django", "fastapi":
+		reqPath := filepath.Join(base, "requirements.txt")
+		if b, err := os.ReadFile(reqPath); err == nil {
+			s := string(b)
+			switch dbID {
+			case "mongo":
+				if !strings.Contains(s, "pymongo") && !strings.Contains(s, "motor") {
+					if cfg.Framework.ID == "fastapi" {
+						s += "motor>=3.4.0\n"
+					} else {
+						s += "pymongo>=4.6.0\n"
+					}
+					_ = os.WriteFile(reqPath, []byte(s), 0644)
+				}
+			case "postgres":
+				if !strings.Contains(s, "psycopg") && !strings.Contains(s, "asyncpg") {
+					s += "psycopg[binary]>=3.1.0\n"
+					_ = os.WriteFile(reqPath, []byte(s), 0644)
+				}
+			case "mysql":
+				if !strings.Contains(s, "pymysql") && !strings.Contains(s, "aiomysql") {
+					if cfg.Framework.ID == "fastapi" {
+						s += "aiomysql>=0.2.0\n"
+					} else {
+						s += "pymysql>=1.1.0\n"
+					}
+					_ = os.WriteFile(reqPath, []byte(s), 0644)
+				}
+			}
+		}
+
 	case "rails":
 		gemfile := filepath.Join(base, "Gemfile")
 		if b, err := os.ReadFile(gemfile); err == nil {
@@ -139,12 +170,28 @@ func addNodeDeps(pkgPath string, deps map[string]string) {
 		return
 	}
 	s := string(b)
+	if !strings.Contains(s, `"dependencies": {`) {
+		if strings.Contains(s, `"devDependencies": {`) {
+			s = strings.Replace(s, `"devDependencies": {`, "\"dependencies\": {\n  },\n  \"devDependencies\": {", 1)
+		} else {
+			last := strings.LastIndex(s, "}")
+			if last != -1 {
+				s = s[:last] + ",\n  \"dependencies\": {\n  }\n}"
+			}
+		}
+	}
 	for name, ver := range deps {
 		if strings.Contains(s, `"`+name+`"`) {
 			continue
 		}
-		s = strings.Replace(s, `"dependencies": {`,
-			fmt.Sprintf("\"dependencies\": {\n    \"%s\": \"%s\",", name, ver), 1)
+		if strings.Contains(s, `"dependencies": {}`) {
+			s = strings.Replace(s, `"dependencies": {}`, fmt.Sprintf("\"dependencies\": {\n    \"%s\": \"%s\"\n  }", name, ver), 1)
+		} else if strings.Contains(s, "\"dependencies\": {\n  }") {
+			s = strings.Replace(s, "\"dependencies\": {\n  }", fmt.Sprintf("\"dependencies\": {\n    \"%s\": \"%s\"\n  }", name, ver), 1)
+		} else {
+			s = strings.Replace(s, `"dependencies": {`,
+				fmt.Sprintf("\"dependencies\": {\n    \"%s\": \"%s\",", name, ver), 1)
+		}
 	}
 	_ = os.WriteFile(pkgPath, []byte(s), 0644)
 }

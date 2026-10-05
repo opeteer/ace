@@ -12,6 +12,10 @@ import (
 // GenerateCompose dynamically builds docker-compose.yml based on framework, db, and proxy options
 func GenerateCompose(cfg *config.ProjectConfig) error {
 	base := cfg.TargetPath
+	envPath := filepath.Join(base, ".env")
+	if _, err := os.Stat(envPath); os.IsNotExist(err) {
+		_ = os.WriteFile(envPath, []byte(fmt.Sprintf("# %s Environment\nPORT=%d\n", cfg.Name, cfg.Framework.DefaultPort)), 0644)
+	}
 
 	var sb strings.Builder
 	sb.WriteString("services:\n")

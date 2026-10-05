@@ -282,12 +282,13 @@ media/
 htmlcov/
 `,
 
-		".env.example": fmt.Sprintf(`SECRET_KEY=%s
-DEBUG=True
-ALLOWED_HOSTS=localhost,127.0.0.1,0.0.0.0
-DB_ENGINE=django.db.backends.sqlite3
-DB_NAME=db.sqlite3
-`, secretKey),
+		".env.example": func() string {
+			baseEnv := fmt.Sprintf("SECRET_KEY=%s\nDEBUG=True\nALLOWED_HOSTS=localhost,127.0.0.1,0.0.0.0\n", secretKey)
+			if cfg.Database.ID == "" || cfg.Database.ID == "sqlite" {
+				baseEnv += "DB_ENGINE=django.db.backends.sqlite3\nDB_NAME=db.sqlite3\n"
+			}
+			return baseEnv
+		}(),
 	}
 
 	for relPath, content := range files {
