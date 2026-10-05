@@ -136,17 +136,17 @@ func installLaravel(cfg *config.ProjectConfig) {
 
 	if found {
 		fmt.Printf("  %s %s\n", stepInfo, dimText.Render("Running 'composer install' for Laravel 11 (live logs enabled)..."))
-		cmd := exec.Command(compBin, "install", "--no-interaction", "--prefer-dist", "--no-security-blocking")
+		cmd := exec.Command(compBin, "install", "--no-interaction", "--prefer-dist", "--no-security-blocking", "-v")
 		cmd.Dir = cfg.TargetPath
-		if err := RunWithIdleTimeout(cmd, 35*time.Second); err == nil {
+		if err := RunWithIdleTimeout(cmd, 120*time.Second); err == nil {
 			fmt.Printf("  %s %s\n", stepSuccess, stepName.Render("Installed Composer dependencies"))
 			return
 		}
 
 		// Fallback without --no-security-blocking for older Composer versions
-		cmd = exec.Command(compBin, "install", "--no-interaction", "--prefer-dist")
+		cmd = exec.Command(compBin, "install", "--no-interaction", "--prefer-dist", "-v")
 		cmd.Dir = cfg.TargetPath
-		if err := RunWithIdleTimeout(cmd, 35*time.Second); err == nil {
+		if err := RunWithIdleTimeout(cmd, 120*time.Second); err == nil {
 			fmt.Printf("  %s %s\n", stepSuccess, stepName.Render("Installed Composer dependencies"))
 			return
 		}
@@ -154,13 +154,13 @@ func installLaravel(cfg *config.ProjectConfig) {
 		fmt.Printf("  %s %s\n", stepWarn, dimText.Render("Host 'composer install' skipped or failed. Checking Docker fallback..."))
 	}
 
-	// Docker fallback: if Docker is available and enabled, run composer install inside container to populate vendor/
-	if cfg.Docker && doctor.IsToolInstalled("docker") {
+	// Docker fallback: if Docker is available, enabled, and daemon is actively running
+	if cfg.Docker && isDockerDaemonRunning() {
 		fmt.Printf("  %s %s\n", stepInfo, dimText.Render("Installing dependencies via Docker container..."))
 		absTarget, err := filepath.Abs(cfg.TargetPath)
 		if err == nil {
 			cmd := exec.Command("docker", "run", "--rm", "-v", fmt.Sprintf("%s:/app", absTarget), "-w", "/app", "composer:latest", "composer", "install", "--no-interaction", "--prefer-dist")
-			if err := RunWithIdleTimeout(cmd, 45*time.Second); err == nil {
+			if err := RunWithIdleTimeout(cmd, 120*time.Second); err == nil {
 				fmt.Printf("  %s %s\n", stepSuccess, stepName.Render("Installed Composer dependencies via containerized Composer"))
 				return
 			}
@@ -172,6 +172,14 @@ func installLaravel(cfg *config.ProjectConfig) {
 	} else {
 		fmt.Printf("  %s %s\n", stepWarn, dimText.Render("Composer not found on host. Run 'ace install composer' or use --docker."))
 	}
+}
+
+func isDockerDaemonRunning() bool {
+	if !doctor.IsToolInstalled("docker") {
+		return false
+	}
+	cmd := exec.Command("docker", "info")
+	return cmd.Run() == nil
 }
 
 func findComposerBinary() (string, bool) {

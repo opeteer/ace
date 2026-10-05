@@ -10,8 +10,8 @@ import (
 	"time"
 )
 
-// DefaultIdleTimeout is the maximum duration to wait without any incoming data
-const DefaultIdleTimeout = 30 * time.Second
+// DefaultIdleTimeout is the maximum duration to wait without any incoming data (2 minutes)
+const DefaultIdleTimeout = 120 * time.Second
 
 // RunWithIdleTimeout executes a command, streaming its stdout and stderr live to the terminal.
 // It allows long-running commands to proceed indefinitely as long as data keeps arriving,
