@@ -73,6 +73,7 @@ type ProjectConfig struct {
 	TargetPath  string
 	Framework   FrameworkSpec
 	Database    DatabaseSpec
+	Redis       bool
 	Docker      bool
 	Proxy       ProxyType
 	Protocol    ProtocolType

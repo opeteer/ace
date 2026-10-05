@@ -16,6 +16,7 @@ func RunWizard(initialName string) (*config.ProjectConfig, error) {
 		selectedFwID   string
 		selectedDbID   string
 		enableDocker   bool
+		includeRedis   bool
 		selectedProxy  string
 		selectedCI     string
 		initGit        = true
@@ -104,28 +105,37 @@ func RunWizard(initialName string) (*config.ProjectConfig, error) {
 		huh.NewOption("GitLab CI (.gitlab-ci.yml)", string(config.CIGitLab)),
 	}
 
-	form := huh.NewForm(
-		huh.NewGroup(
-			huh.NewConfirm().
-				Title("Include Docker & Docker Compose?").
-				Description("Generates multi-stage Dockerfile and orchestrated docker-compose.yml").
-				Value(&enableDocker),
+	formFields := []huh.Field{
+		huh.NewConfirm().
+			Title("Include Docker & Docker Compose?").
+			Description("Generates multi-stage Dockerfile and orchestrated docker-compose.yml").
+			Value(&enableDocker),
+	}
 
-			huh.NewSelect[string]().
-				Title("Reverse Proxy / Gateway").
-				Options(proxyOptions...).
-				Value(&selectedProxy),
+	if selectedDbID != "redis" {
+		formFields = append(formFields, huh.NewConfirm().
+			Title("Include companion Redis cache / message broker?").
+			Description("Adds Redis container service and framework client libraries").
+			Value(&includeRedis))
+	}
 
-			huh.NewSelect[string]().
-				Title("CI/CD Pipeline").
-				Options(ciOptions...).
-				Value(&selectedCI),
+	formFields = append(formFields,
+		huh.NewSelect[string]().
+			Title("Reverse Proxy / Gateway").
+			Options(proxyOptions...).
+			Value(&selectedProxy),
 
-			huh.NewConfirm().
-				Title("Initialize Git repository?").
-				Value(&initGit),
-		),
+		huh.NewSelect[string]().
+			Title("CI/CD Pipeline").
+			Options(ciOptions...).
+			Value(&selectedCI),
+
+		huh.NewConfirm().
+			Title("Initialize Git repository?").
+			Value(&initGit),
 	)
+
+	form := huh.NewForm(huh.NewGroup(formFields...))
 
 	err = form.Run()
 	if err != nil {
@@ -143,6 +153,7 @@ func RunWizard(initialName string) (*config.ProjectConfig, error) {
 		TargetPath:  strings.TrimSpace(projectName),
 		Framework:   fw,
 		Database:    db,
+		Redis:       includeRedis,
 		Docker:      enableDocker,
 		Proxy:       config.ProxyType(selectedProxy),
 		Protocol:    config.ProtocolREST,

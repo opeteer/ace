@@ -48,14 +48,23 @@ func GenerateCompose(cfg *config.ProjectConfig) error {
 		}
 	}
 
-	if cfg.Database.ID != "" && cfg.Database.ID != "sqlite" {
+	hasPrimaryDB := cfg.Database.ID != "" && cfg.Database.ID != "sqlite"
+	hasCompanionRedis := cfg.Redis && cfg.Database.ID != "redis"
+
+	if hasPrimaryDB || hasCompanionRedis {
 		sb.WriteString("    depends_on:\n")
-		sb.WriteString("      db:\n")
-		sb.WriteString("        condition: service_healthy\n")
+		if hasPrimaryDB {
+			sb.WriteString("      db:\n")
+			sb.WriteString("        condition: service_healthy\n")
+		}
+		if hasCompanionRedis {
+			sb.WriteString("      redis:\n")
+			sb.WriteString("        condition: service_healthy\n")
+		}
 	}
 
 	// 2. Database Service
-	if cfg.Database.ID != "" && cfg.Database.ID != "sqlite" {
+	if hasPrimaryDB {
 		sb.WriteString("\n  db:\n")
 		sb.WriteString(fmt.Sprintf("    image: %s\n", cfg.Database.DockerImage))
 		sb.WriteString("    restart: unless-stopped\n")
@@ -117,10 +126,79 @@ func GenerateCompose(cfg *config.ProjectConfig) error {
 			sb.WriteString("      interval: 5s\n")
 			sb.WriteString("      timeout: 5s\n")
 			sb.WriteString("      retries: 5\n")
+
+		case "clickhouse":
+			sb.WriteString("    ports:\n")
+			sb.WriteString("      - \"8123:8123\"\n")
+			sb.WriteString("      - \"9000:9000\"\n")
+			sb.WriteString("    volumes:\n")
+			sb.WriteString("      - db_data:/var/lib/clickhouse\n")
+			sb.WriteString("    healthcheck:\n")
+			sb.WriteString("      test: [\"CMD-SHELL\", \"wget --spider -q http://localhost:8123/ping || exit 1\"]\n")
+			sb.WriteString("      interval: 5s\n")
+			sb.WriteString("      timeout: 5s\n")
+			sb.WriteString("      retries: 5\n")
+
+		case "meilisearch":
+			sb.WriteString("    environment:\n")
+			sb.WriteString("      MEILI_MASTER_KEY: secret\n")
+			sb.WriteString("    ports:\n")
+			sb.WriteString("      - \"7700:7700\"\n")
+			sb.WriteString("    volumes:\n")
+			sb.WriteString("      - db_data:/meili_data\n")
+			sb.WriteString("    healthcheck:\n")
+			sb.WriteString("      test: [\"CMD-SHELL\", \"curl -f http://localhost:7700/health || exit 1\"]\n")
+			sb.WriteString("      interval: 5s\n")
+			sb.WriteString("      timeout: 5s\n")
+			sb.WriteString("      retries: 5\n")
+
+		case "elastic":
+			sb.WriteString("    environment:\n")
+			sb.WriteString("      discovery.type: single-node\n")
+			sb.WriteString("      xpack.security.enabled: \"false\"\n")
+			sb.WriteString("    ports:\n")
+			sb.WriteString("      - \"9200:9200\"\n")
+			sb.WriteString("    volumes:\n")
+			sb.WriteString("      - db_data:/usr/share/elasticsearch/data\n")
+			sb.WriteString("    healthcheck:\n")
+			sb.WriteString("      test: [\"CMD-SHELL\", \"curl -f http://localhost:9200/_cluster/health || exit 1\"]\n")
+			sb.WriteString("      interval: 5s\n")
+			sb.WriteString("      timeout: 5s\n")
+			sb.WriteString("      retries: 5\n")
+
+		case "neo4j":
+			sb.WriteString("    environment:\n")
+			sb.WriteString("      NEO4J_AUTH: neo4j/secret\n")
+			sb.WriteString("    ports:\n")
+			sb.WriteString("      - \"7474:7474\"\n")
+			sb.WriteString("      - \"7687:7687\"\n")
+			sb.WriteString("    volumes:\n")
+			sb.WriteString("      - db_data:/data\n")
+			sb.WriteString("    healthcheck:\n")
+			sb.WriteString("      test: [\"CMD-SHELL\", \"wget --spider -q http://localhost:7474 || exit 1\"]\n")
+			sb.WriteString("      interval: 5s\n")
+			sb.WriteString("      timeout: 5s\n")
+			sb.WriteString("      retries: 5\n")
 		}
 	}
 
-	// 3. Reverse Proxy (Nginx)
+	// 3. Companion Redis Service
+	if hasCompanionRedis {
+		sb.WriteString("\n  redis:\n")
+		sb.WriteString("    image: redis:7-alpine\n")
+		sb.WriteString("    restart: unless-stopped\n")
+		sb.WriteString("    ports:\n")
+		sb.WriteString("      - \"6379:6379\"\n")
+		sb.WriteString("    volumes:\n")
+		sb.WriteString("      - redis_data:/data\n")
+		sb.WriteString("    healthcheck:\n")
+		sb.WriteString("      test: [\"CMD\", \"redis-cli\", \"ping\"]\n")
+		sb.WriteString("      interval: 5s\n")
+		sb.WriteString("      timeout: 5s\n")
+		sb.WriteString("      retries: 5\n")
+	}
+
+	// 4. Reverse Proxy (Nginx)
 	if cfg.Proxy == config.ProxyNginx {
 		sb.WriteString("\n  proxy:\n")
 		sb.WriteString("    image: nginx:alpine\n")
@@ -137,18 +215,15 @@ func GenerateCompose(cfg *config.ProjectConfig) error {
 	}
 
 	// Volumes section
-	hasVolumes := false
-	if cfg.Database.ID != "" && cfg.Database.ID != "sqlite" {
-		hasVolumes = true
-	}
-	if cfg.Framework.ID == "laravel" {
-		hasVolumes = true
-	}
+	hasVolumes := hasPrimaryDB || hasCompanionRedis || (cfg.Framework.ID == "laravel")
 
 	if hasVolumes {
 		sb.WriteString("\nvolumes:\n")
-		if cfg.Database.ID != "" && cfg.Database.ID != "sqlite" {
+		if hasPrimaryDB {
 			sb.WriteString("  db_data:\n")
+		}
+		if hasCompanionRedis {
+			sb.WriteString("  redis_data:\n")
 		}
 		if cfg.Framework.ID == "laravel" {
 			sb.WriteString("  app_vendor:\n")

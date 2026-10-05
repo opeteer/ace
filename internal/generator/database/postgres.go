@@ -25,7 +25,7 @@ func InjectPostgres(cfg *config.ProjectConfig) error {
 		return injectDjangoPostgres(cfg, host)
 	case "next":
 		return injectNextJSPostgres(cfg, host)
-	case "fiber":
+	case "fiber", "gin":
 		return injectFiberPostgres(cfg, host)
 	default:
 		return injectGenericDB(cfg)
@@ -260,6 +260,7 @@ func ConnectDB() {
 }
 `, host, cfg.DBName())
 
+	_ = os.MkdirAll(filepath.Join(base, "internal", "database"), 0755)
 	if err := os.WriteFile(filepath.Join(base, "internal/database/database.go"), []byte(dbGo), 0644); err != nil {
 		return err
 	}
@@ -281,6 +282,7 @@ func ConnectDB() {
 
 	envConfig := fmt.Sprintf(`
 # Database Configuration (PostgreSQL)
+DB_CONNECTION=postgres
 DB_HOST=%s
 DB_PORT=5432
 DB_USER=ace_user

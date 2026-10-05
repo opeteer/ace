@@ -11,20 +11,42 @@ import (
 
 // InjectDatabase routes database injection based on engine and framework
 func InjectDatabase(cfg *config.ProjectConfig) error {
-	switch cfg.Database.ID {
-	case "postgres":
-		return InjectPostgres(cfg)
-	case "mysql", "mariadb":
-		return InjectMySQL(cfg)
-	case "mongo":
-		return InjectMongo(cfg)
-	case "sqlite":
-		return InjectSQLite(cfg)
-	case "redis":
-		return InjectRedis(cfg)
-	default:
-		return injectGenericDB(cfg)
+	if cfg.Database.ID != "" {
+		var err error
+		switch cfg.Database.ID {
+		case "postgres":
+			err = InjectPostgres(cfg)
+		case "mysql", "mariadb":
+			err = InjectMySQL(cfg)
+		case "mongo":
+			err = InjectMongo(cfg)
+		case "sqlite":
+			err = InjectSQLite(cfg)
+		case "redis":
+			err = InjectRedis(cfg)
+		default:
+			err = injectGenericDB(cfg)
+		}
+		if err != nil {
+			return err
+		}
+
+		host := "127.0.0.1"
+		if cfg.Docker {
+			host = "db"
+		}
+		if err := InjectDriverManifest(cfg, cfg.Database.ID, host); err != nil {
+			return err
+		}
 	}
+
+	if cfg.Redis && cfg.Database.ID != "redis" {
+		if err := InjectCompanionRedis(cfg); err != nil {
+			return err
+		}
+	}
+
+	return nil
 }
 
 func appendToEnv(basePath, content string) error {

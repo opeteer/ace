@@ -360,21 +360,8 @@ func diagnoseLaravelProject(report *ProjectDiagnosticReport) {
 			Detail:   keyDetail,
 		})
 
-		// 5. Database in .env
-		dbType := extractEnvVar(string(envData), "DB_CONNECTION")
-		if dbType == "" {
-			dbType = "configured"
-		}
-		dbHost := extractEnvVar(string(envData), "DB_HOST")
-		dbPort := extractEnvVar(string(envData), "DB_PORT")
-		report.Checks = append(report.Checks, ProjectCheckItem{
-			Name:     "Database Config",
-			Category: "Configuration",
-			Status:   StatusOK,
-			Current:  fmt.Sprintf("%s (%s:%s)", dbType, dbHost, dbPort),
-			Required: "DB_CONNECTION in .env",
-			Detail:   fmt.Sprintf("Wired for %s", dbType),
-		})
+		// 5. Database & Redis in .env
+		auditDatabaseAndRedis(report, string(envData))
 	} else {
 		report.Checks = append(report.Checks, ProjectCheckItem{
 			Name:        "Environment",
@@ -466,33 +453,7 @@ func diagnosePythonProject(report *ProjectDiagnosticReport) {
 			Detail:   "Environment file configured",
 		})
 
-		if report.FrameworkID == "django" || fileExists(filepath.Join(report.ProjectPath, "manage.py")) {
-			dbEngine := extractEnvVar(envStr, "DB_ENGINE")
-			dbName := extractEnvVar(envStr, "DB_NAME")
-			dbHost := extractEnvVar(envStr, "DB_HOST")
-			if dbEngine == "" {
-				dbEngine = "sqlite3"
-			}
-			if strings.Contains(dbEngine, "postgres") {
-				report.Checks = append(report.Checks, ProjectCheckItem{
-					Name:     "Database Config",
-					Category: "Configuration",
-					Status:   StatusOK,
-					Current:  fmt.Sprintf("PostgreSQL (%s:%s)", dbHost, extractEnvVar(envStr, "DB_PORT")),
-					Required: "PostgreSQL",
-					Detail:   fmt.Sprintf("Database '%s' configured", dbName),
-				})
-			} else {
-				report.Checks = append(report.Checks, ProjectCheckItem{
-					Name:     "Database Config",
-					Category: "Configuration",
-					Status:   StatusOK,
-					Current:  "SQLite3",
-					Required: "Database backend",
-					Detail:   fmt.Sprintf("Local DB: %s", dbName),
-				})
-			}
-		}
+		auditDatabaseAndRedis(report, envStr)
 	}
 
 	if report.FrameworkID == "django" || fileExists(filepath.Join(report.ProjectPath, "manage.py")) {
@@ -715,26 +676,390 @@ func checkProjectEnv(report *ProjectDiagnosticReport) {
 			Detail:   "Environment configured",
 		})
 
-		dbHost := extractEnvVar(envStr, "DB_HOST")
-		dbType := extractEnvVar(envStr, "DB_CONNECTION")
-		if dbType == "" {
-			dbType = extractEnvVar(envStr, "DB_ENGINE")
+		auditDatabaseAndRedis(report, envStr)
+	}
+}
+
+func auditDatabaseAndRedis(report *ProjectDiagnosticReport, envStr string) {
+	// 1. Identify primary database
+	dbConnection := extractEnvVar(envStr, "DB_CONNECTION")
+	dbEngine := extractEnvVar(envStr, "DB_ENGINE")
+	dbType := extractEnvVar(envStr, "DB_TYPE")
+	dbURL := extractEnvVar(envStr, "DATABASE_URL")
+	mongoURI := extractEnvVar(envStr, "MONGODB_URI")
+	dbHost := extractEnvVar(envStr, "DB_HOST")
+	dbPort := extractEnvVar(envStr, "DB_PORT")
+	dbName := extractEnvVar(envStr, "DB_NAME")
+	if dbName == "" {
+		dbName = extractEnvVar(envStr, "DB_DATABASE")
+	}
+
+	var detectedDB, displayName, defaultPort string
+	isSQLite := false
+
+	lowerConn := strings.ToLower(dbConnection + " " + dbEngine + " " + dbType + " " + dbURL + " " + mongoURI)
+
+	if strings.Contains(lowerConn, "postgres") || strings.Contains(lowerConn, "pgsql") {
+		detectedDB = "postgres"
+		displayName = "PostgreSQL"
+		defaultPort = "5432"
+	} else if strings.Contains(lowerConn, "mariadb") {
+		detectedDB = "mariadb"
+		displayName = "MariaDB"
+		defaultPort = "3306"
+	} else if strings.Contains(lowerConn, "mysql") {
+		detectedDB = "mysql"
+		displayName = "MySQL"
+		defaultPort = "3306"
+	} else if strings.Contains(lowerConn, "sqlite") {
+		detectedDB = "sqlite"
+		displayName = "SQLite3"
+		isSQLite = true
+	} else if strings.Contains(lowerConn, "mongo") {
+		detectedDB = "mongo"
+		displayName = "MongoDB"
+		defaultPort = "27017"
+	} else if strings.Contains(lowerConn, "clickhouse") {
+		detectedDB = "clickhouse"
+		displayName = "ClickHouse"
+		defaultPort = "8123"
+	} else if strings.Contains(lowerConn, "meilisearch") {
+		detectedDB = "meilisearch"
+		displayName = "Meilisearch"
+		defaultPort = "7700"
+	} else if strings.Contains(lowerConn, "elastic") {
+		detectedDB = "elastic"
+		displayName = "Elasticsearch"
+		defaultPort = "9200"
+	} else if strings.Contains(lowerConn, "neo4j") {
+		detectedDB = "neo4j"
+		displayName = "Neo4j"
+		defaultPort = "7474"
+	} else if strings.Contains(lowerConn, "redis") && !strings.Contains(envStr, "DB_CONNECTION=postgres") && !strings.Contains(envStr, "DB_CONNECTION=mysql") {
+		detectedDB = "redis"
+		displayName = "Redis"
+		defaultPort = "6379"
+	}
+
+	if detectedDB != "" || dbHost != "" || dbConnection != "" {
+		if displayName == "" {
+			if dbType != "" {
+				displayName = strings.Title(dbType)
+			} else if dbConnection != "" {
+				displayName = strings.Title(dbConnection)
+			} else {
+				displayName = "Database"
+			}
 		}
-		if dbHost != "" || dbType != "" {
-			dbPort := extractEnvVar(envStr, "DB_PORT")
-			if dbType == "" {
-				dbType = "Database"
+
+		if isSQLite {
+			sqliteFile := dbName
+			if sqliteFile == "" {
+				sqliteFile = "db.sqlite3"
 			}
 			report.Checks = append(report.Checks, ProjectCheckItem{
 				Name:     "Database Config",
 				Category: "Configuration",
 				Status:   StatusOK,
-				Current:  fmt.Sprintf("%s (%s:%s)", dbType, dbHost, dbPort),
-				Required: "Database connection",
-				Detail:   "Database parameters configured in .env",
+				Current:  fmt.Sprintf("%s (%s)", displayName, sqliteFile),
+				Required: "SQLite database file",
+				Detail:   "File-based embedded database",
+			})
+		} else {
+			port := dbPort
+			if port == "" {
+				port = defaultPort
+			}
+			host := dbHost
+			if host == "" {
+				host = "127.0.0.1"
+			}
+			current := fmt.Sprintf("%s (%s:%s)", displayName, host, port)
+			detail := fmt.Sprintf("Wired for %s", displayName)
+			if dbName != "" {
+				detail = fmt.Sprintf("Database '%s' configured in .env", dbName)
+			}
+			report.Checks = append(report.Checks, ProjectCheckItem{
+				Name:     "Database Config",
+				Category: "Configuration",
+				Status:   StatusOK,
+				Current:  current,
+				Required: displayName,
+				Detail:   detail,
+			})
+		}
+
+		// Audit DB driver for primary database
+		auditDBDriver(report, detectedDB)
+	}
+
+	// 2. Audit Companion Redis
+	redisHost := extractEnvVar(envStr, "REDIS_HOST")
+	redisPort := extractEnvVar(envStr, "REDIS_PORT")
+	redisURL := extractEnvVar(envStr, "REDIS_URL")
+	redisAddr := extractEnvVar(envStr, "REDIS_ADDR")
+
+	if (redisHost != "" || redisURL != "" || redisAddr != "") && detectedDB != "redis" {
+		if redisPort == "" {
+			redisPort = "6379"
+		}
+		if redisHost == "" {
+			redisHost = "127.0.0.1"
+		}
+		report.Checks = append(report.Checks, ProjectCheckItem{
+			Name:     "Redis Cache",
+			Category: "Configuration",
+			Status:   StatusOK,
+			Current:  fmt.Sprintf("Redis (%s:%s)", redisHost, redisPort),
+			Required: "REDIS_HOST in .env",
+			Detail:   "In-memory cache & queue configured",
+		})
+
+		// Audit Redis client driver
+		auditRedisDriver(report)
+	}
+}
+
+func auditDBDriver(report *ProjectDiagnosticReport, dbType string) {
+	switch report.FrameworkID {
+	case "django", "fastapi":
+		switch dbType {
+		case "postgres":
+			if checkPythonPackage(report, "psycopg2") || checkPythonPackage(report, "asyncpg") || checkPythonPackage(report, "psycopg") {
+				report.Checks = append(report.Checks, ProjectCheckItem{
+					Name:     "PostgreSQL Driver",
+					Category: "Dependencies",
+					Status:   StatusOK,
+					Current:  "Installed (psycopg)",
+					Required: "psycopg or asyncpg",
+					Detail:   "Python PostgreSQL client ready in .venv",
+				})
+			}
+		case "mysql", "mariadb":
+			if checkPythonPackage(report, "pymysql") || checkPythonPackage(report, "aiomysql") {
+				report.Checks = append(report.Checks, ProjectCheckItem{
+					Name:     "MySQL Driver",
+					Category: "Dependencies",
+					Status:   StatusOK,
+					Current:  "Installed (pymysql/aiomysql)",
+					Required: "pymysql or aiomysql",
+					Detail:   "Python MySQL client ready in .venv",
+				})
+			}
+		case "mongo":
+			if checkPythonPackage(report, "pymongo") || checkPythonPackage(report, "motor") {
+				report.Checks = append(report.Checks, ProjectCheckItem{
+					Name:     "MongoDB Driver",
+					Category: "Dependencies",
+					Status:   StatusOK,
+					Current:  "Installed (pymongo/motor)",
+					Required: "pymongo or motor",
+					Detail:   "Python MongoDB client ready in .venv",
+				})
+			}
+		case "sqlite":
+			report.Checks = append(report.Checks, ProjectCheckItem{
+				Name:     "SQLite Driver",
+				Category: "Dependencies",
+				Status:   StatusOK,
+				Current:  "Built-in (sqlite3)",
+				Required: "sqlite3",
+				Detail:   "Standard library SQLite engine",
+			})
+		}
+
+	case "next", "nuxt", "sveltekit", "astro", "express", "nestjs", "vite-react", "vite-vue":
+		switch dbType {
+		case "postgres":
+			if checkNodePackage(report, "@prisma/client") || checkNodePackage(report, "pg") {
+				report.Checks = append(report.Checks, ProjectCheckItem{
+					Name:     "PostgreSQL Driver",
+					Category: "Dependencies",
+					Status:   StatusOK,
+					Current:  "Declared (pg/prisma)",
+					Required: "pg or @prisma/client",
+					Detail:   "Node PostgreSQL driver declared",
+				})
+			}
+		case "mysql", "mariadb":
+			if checkNodePackage(report, "mysql2") {
+				report.Checks = append(report.Checks, ProjectCheckItem{
+					Name:     "MySQL Driver",
+					Category: "Dependencies",
+					Status:   StatusOK,
+					Current:  "Declared (mysql2)",
+					Required: "mysql2",
+					Detail:   "Node MySQL driver declared in package.json",
+				})
+			}
+		case "sqlite":
+			if checkNodePackage(report, "better-sqlite3") || checkNodePackage(report, "sqlite3") {
+				report.Checks = append(report.Checks, ProjectCheckItem{
+					Name:     "SQLite Driver",
+					Category: "Dependencies",
+					Status:   StatusOK,
+					Current:  "Declared (sqlite)",
+					Required: "sqlite3 or better-sqlite3",
+					Detail:   "Node SQLite driver declared in package.json",
+				})
+			}
+		case "mongo":
+			if checkNodePackage(report, "mongodb") || checkNodePackage(report, "mongoose") {
+				report.Checks = append(report.Checks, ProjectCheckItem{
+					Name:     "MongoDB Driver",
+					Category: "Dependencies",
+					Status:   StatusOK,
+					Current:  "Declared (mongodb)",
+					Required: "mongodb or mongoose",
+					Detail:   "Node MongoDB driver declared in package.json",
+				})
+			}
+		}
+
+	case "gin", "fiber":
+		switch dbType {
+		case "postgres":
+			if checkGoModule(report, "gorm.io/driver/postgres") || checkGoModule(report, "lib/pq") || checkGoModule(report, "jackc/pgx") {
+				report.Checks = append(report.Checks, ProjectCheckItem{
+					Name:     "PostgreSQL Driver",
+					Category: "Dependencies",
+					Status:   StatusOK,
+					Current:  "Declared (gorm/postgres)",
+					Required: "gorm.io/driver/postgres",
+					Detail:   "Go PostgreSQL driver declared in go.mod",
+				})
+			}
+		case "mysql", "mariadb":
+			if checkGoModule(report, "gorm.io/driver/mysql") || checkGoModule(report, "go-sql-driver/mysql") {
+				report.Checks = append(report.Checks, ProjectCheckItem{
+					Name:     "MySQL Driver",
+					Category: "Dependencies",
+					Status:   StatusOK,
+					Current:  "Declared (gorm/mysql)",
+					Required: "gorm.io/driver/mysql",
+					Detail:   "Go MySQL driver declared in go.mod",
+				})
+			}
+		case "sqlite":
+			if checkGoModule(report, "gorm.io/driver/sqlite") || checkGoModule(report, "mattn/go-sqlite3") {
+				report.Checks = append(report.Checks, ProjectCheckItem{
+					Name:     "SQLite Driver",
+					Category: "Dependencies",
+					Status:   StatusOK,
+					Current:  "Declared (gorm/sqlite)",
+					Required: "gorm.io/driver/sqlite",
+					Detail:   "Go SQLite driver declared in go.mod",
+				})
+			}
+		}
+	}
+}
+
+func auditRedisDriver(report *ProjectDiagnosticReport) {
+	switch report.FrameworkID {
+	case "django", "fastapi":
+		if checkPythonPackage(report, "redis") || checkPythonPackage(report, "django_redis") {
+			report.Checks = append(report.Checks, ProjectCheckItem{
+				Name:     "Redis Driver",
+				Category: "Dependencies",
+				Status:   StatusOK,
+				Current:  "Installed (redis-py)",
+				Required: "redis / django-redis",
+				Detail:   "Python Redis client ready in .venv",
+			})
+		}
+	case "next", "nuxt", "sveltekit", "astro", "express", "nestjs", "vite-react", "vite-vue":
+		if checkNodePackage(report, "ioredis") || checkNodePackage(report, "redis") {
+			report.Checks = append(report.Checks, ProjectCheckItem{
+				Name:     "Redis Driver",
+				Category: "Dependencies",
+				Status:   StatusOK,
+				Current:  "Declared (ioredis)",
+				Required: "ioredis",
+				Detail:   "Node.js Redis client declared in package.json",
+			})
+		}
+	case "gin", "fiber":
+		if checkGoModule(report, "go-redis") {
+			report.Checks = append(report.Checks, ProjectCheckItem{
+				Name:     "Redis Driver",
+				Category: "Dependencies",
+				Status:   StatusOK,
+				Current:  "Declared (go-redis/v9)",
+				Required: "github.com/redis/go-redis/v9",
+				Detail:   "Go Redis client library declared in go.mod",
+			})
+		}
+	case "laravel":
+		if checkComposerPackage(report, "predis") {
+			report.Checks = append(report.Checks, ProjectCheckItem{
+				Name:     "Redis Driver",
+				Category: "Dependencies",
+				Status:   StatusOK,
+				Current:  "Declared (predis)",
+				Required: "predis/predis",
+				Detail:   "PHP Redis client library declared in composer.json",
 			})
 		}
 	}
+}
+
+func checkPythonPackage(report *ProjectDiagnosticReport, pkgName string) bool {
+	venvPath := filepath.Join(report.ProjectPath, ".venv")
+	pyBin := filepath.Join(venvPath, "bin", "python")
+	if runtime.GOOS == "windows" {
+		pyBin = filepath.Join(venvPath, "Scripts", "python.exe")
+	}
+	if fileExists(pyBin) {
+		cmd := exec.Command(pyBin, "-c", fmt.Sprintf("import %s", pkgName))
+		if err := cmd.Run(); err == nil {
+			return true
+		}
+	}
+	reqPath := filepath.Join(report.ProjectPath, "requirements.txt")
+	if reqBytes, err := os.ReadFile(reqPath); err == nil {
+		reqLower := strings.ToLower(string(reqBytes))
+		pkgLower := strings.ToLower(pkgName)
+		pkgAlt := strings.ReplaceAll(pkgLower, "_", "-")
+		if strings.Contains(reqLower, pkgLower) || strings.Contains(reqLower, pkgAlt) {
+			return true
+		}
+	}
+	return false
+}
+
+func checkNodePackage(report *ProjectDiagnosticReport, pkgName string) bool {
+	pkgJsonPath := filepath.Join(report.ProjectPath, "package.json")
+	if pkgBytes, err := os.ReadFile(pkgJsonPath); err == nil {
+		if strings.Contains(string(pkgBytes), fmt.Sprintf(`"%s"`, pkgName)) {
+			return true
+		}
+	}
+	nmPath := filepath.Join(report.ProjectPath, "node_modules", pkgName)
+	if stat, err := os.Stat(nmPath); err == nil && stat.IsDir() {
+		return true
+	}
+	return false
+}
+
+func checkGoModule(report *ProjectDiagnosticReport, modName string) bool {
+	goModPath := filepath.Join(report.ProjectPath, "go.mod")
+	if modBytes, err := os.ReadFile(goModPath); err == nil {
+		if strings.Contains(string(modBytes), modName) {
+			return true
+		}
+	}
+	return false
+}
+
+func checkComposerPackage(report *ProjectDiagnosticReport, pkgName string) bool {
+	compPath := filepath.Join(report.ProjectPath, "composer.json")
+	if compBytes, err := os.ReadFile(compPath); err == nil {
+		if strings.Contains(string(compBytes), pkgName) {
+			return true
+		}
+	}
+	return false
 }
 
 func diagnoseCommonTools(report *ProjectDiagnosticReport) {

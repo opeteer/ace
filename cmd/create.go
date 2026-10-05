@@ -19,6 +19,7 @@ var (
 	flagNginx     bool
 	flagCI        string
 	flagProtocol  string
+	flagRedis     bool
 	flagNoGit     bool
 	flagNoInstall bool
 )
@@ -124,6 +125,7 @@ Examples:
 				TargetPath:  targetPath,
 				Framework:   fw,
 				Database:    db,
+				Redis:       flagRedis,
 				Docker:      enableDocker,
 				Proxy:       proxyType,
 				Protocol:    protocolType,
@@ -153,6 +155,7 @@ Examples:
 func init() {
 	createCmd.Flags().StringVarP(&flagFramework, "framework", "f", "", "Framework to scaffold (e.g. laravel, fastapi, next, fiber)")
 	createCmd.Flags().StringVarP(&flagDatabase, "db", "d", "", "Database to configure (e.g. postgres, mysql, mongo, sqlite, redis)")
+	createCmd.Flags().BoolVar(&flagRedis, "redis", false, "Add companion Redis cache and queue service")
 	createCmd.Flags().BoolVar(&flagDocker, "docker", false, "Generate Dockerfile and docker-compose.yml")
 	createCmd.Flags().StringVar(&flagProxy, "proxy", "", "Reverse proxy gateway (nginx, caddy)")
 	createCmd.Flags().BoolVar(&flagNginx, "nginx", false, "Shorthand to enable Nginx reverse proxy")

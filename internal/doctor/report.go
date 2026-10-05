@@ -243,8 +243,8 @@ func RenderProjectReport(report *ProjectDiagnosticReport) string {
 
 			b.WriteString(fmt.Sprintf("  %s %s %s %s\n",
 				statusBadge,
-				toolNameStyle.Render(item.Name),
-				versionStyle.Render(cur),
+				toolNameStyle.Width(20).Render(item.Name),
+				versionStyle.Width(34).Render(cur),
 				stacksStyle.Render(item.Detail),
 			))
 

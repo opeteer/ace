@@ -138,7 +138,7 @@ ASGI_APPLICATION = '%s.asgi.application'
 
 # Database configuration
 DB_ENGINE = os.getenv('DB_ENGINE', 'django.db.backends.sqlite3')
-if DB_ENGINE == 'django.db.backends.postgresql' or 'postgres' in DB_ENGINE:
+if 'postgres' in DB_ENGINE:
     DATABASES = {
         'default': {
             'ENGINE': 'django.db.backends.postgresql',
@@ -147,6 +147,17 @@ if DB_ENGINE == 'django.db.backends.postgresql' or 'postgres' in DB_ENGINE:
             'PASSWORD': os.getenv('DB_PASSWORD', 'secret'),
             'HOST': os.getenv('DB_HOST', '127.0.0.1'),
             'PORT': os.getenv('DB_PORT', '5432'),
+        }
+    }
+elif 'mysql' in DB_ENGINE or 'mariadb' in DB_ENGINE:
+    DATABASES = {
+        'default': {
+            'ENGINE': 'django.db.backends.mysql',
+            'NAME': os.getenv('DB_NAME', os.getenv('MYSQL_DATABASE', 'ace_db')),
+            'USER': os.getenv('DB_USER', 'ace_user'),
+            'PASSWORD': os.getenv('DB_PASSWORD', 'secret'),
+            'HOST': os.getenv('DB_HOST', '127.0.0.1'),
+            'PORT': os.getenv('DB_PORT', '3306'),
         }
     }
 else:

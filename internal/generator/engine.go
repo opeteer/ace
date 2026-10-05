@@ -45,11 +45,16 @@ func (e *Engine) Execute() error {
 	fmt.Printf("  %s %s\n", stepSuccess, stepName.Render(fmt.Sprintf("Scaffolded %s project (%s)", e.cfg.Framework.Name, e.cfg.Framework.Language)))
 
 	// 3. Database Injection
-	if e.cfg.Database.ID != "" {
+	if e.cfg.Database.ID != "" || e.cfg.Redis {
 		if err := database.InjectDatabase(e.cfg); err != nil {
 			return fmt.Errorf("failed to configure database: %w", err)
 		}
-		fmt.Printf("  %s %s\n", stepSuccess, stepName.Render(fmt.Sprintf("Configured %s (%s)", e.cfg.Database.Name, e.cfg.Database.Paradigm)))
+		if e.cfg.Database.ID != "" {
+			fmt.Printf("  %s %s\n", stepSuccess, stepName.Render(fmt.Sprintf("Configured %s (%s)", e.cfg.Database.Name, e.cfg.Database.Paradigm)))
+		}
+		if e.cfg.Redis && e.cfg.Database.ID != "redis" {
+			fmt.Printf("  %s %s\n", stepSuccess, stepName.Render("Configured companion Redis (Key-Value / Cache)"))
+		}
 	}
 
 	// 4. Docker & Compose
