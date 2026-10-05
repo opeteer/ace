@@ -21,6 +21,8 @@ func InjectPostgres(cfg *config.ProjectConfig) error {
 		return injectLaravelPostgres(cfg, host)
 	case "fastapi":
 		return injectFastAPIPostgres(cfg, host)
+	case "django":
+		return injectDjangoPostgres(cfg, host)
 	case "next":
 		return injectNextJSPostgres(cfg, host)
 	case "fiber":
@@ -28,6 +30,23 @@ func InjectPostgres(cfg *config.ProjectConfig) error {
 	default:
 		return injectGenericDB(cfg)
 	}
+}
+
+func injectDjangoPostgres(cfg *config.ProjectConfig, host string) error {
+	envConfig := fmt.Sprintf(`
+# Database Configuration (PostgreSQL)
+DB_ENGINE=django.db.backends.postgresql
+DB_NAME=%s
+DB_USER=ace_user
+DB_PASSWORD=secret
+DB_HOST=%s
+DB_PORT=5432
+POSTGRES_USER=ace_user
+POSTGRES_PASSWORD=secret
+POSTGRES_DB=%s
+`, cfg.DBName(), host, cfg.DBName())
+
+	return appendToEnv(cfg.TargetPath, envConfig)
 }
 
 func injectLaravelPostgres(cfg *config.ProjectConfig, host string) error {

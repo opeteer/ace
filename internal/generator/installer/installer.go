@@ -6,6 +6,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"runtime"
+	"strings"
 	"time"
 
 	"github.com/charmbracelet/lipgloss"
@@ -41,6 +42,12 @@ func Run(cfg *config.ProjectConfig) {
 		installRust(cfg)
 	case "flutter":
 		installFlutter(cfg)
+	case "aspnet":
+		installDotnet(cfg)
+	case "springboot":
+		installJava(cfg)
+	case "rails":
+		installRails(cfg)
 	default:
 		switch cfg.Framework.Language {
 		case "Go":
@@ -51,6 +58,14 @@ func Run(cfg *config.ProjectConfig) {
 			installNode(cfg)
 		case "Rust":
 			installRust(cfg)
+		case "C#":
+			installDotnet(cfg)
+		case "Java", "Java/Kotlin":
+			installJava(cfg)
+		case "Ruby":
+			installRails(cfg)
+		case "Dart":
+			installFlutter(cfg)
 		}
 	}
 }
@@ -118,8 +133,29 @@ func InstallDirectory(targetDir string) error {
 		installFlutter(cfg)
 	}
 
+	// Check .NET
+	if matches, _ := filepath.Glob(filepath.Join(targetDir, "*.csproj")); len(matches) > 0 {
+		detected = true
+		cfg := &config.ProjectConfig{TargetPath: targetDir}
+		installDotnet(cfg)
+	}
+
+	// Check Java / Maven
+	if fileExists(filepath.Join(targetDir, "pom.xml")) {
+		detected = true
+		cfg := &config.ProjectConfig{TargetPath: targetDir}
+		installJava(cfg)
+	}
+
+	// Check Ruby / Bundler
+	if fileExists(filepath.Join(targetDir, "Gemfile")) {
+		detected = true
+		cfg := &config.ProjectConfig{TargetPath: targetDir}
+		installRails(cfg)
+	}
+
 	if !detected {
-		return fmt.Errorf("no supported project manifest (package.json, composer.json, requirements.txt, go.mod, Cargo.toml, pubspec.yaml) found in '%s'", targetDir)
+		return fmt.Errorf("no supported project manifest found in '%s'", targetDir)
 	}
 
 	return nil
@@ -207,10 +243,20 @@ func installNode(cfg *config.ProjectConfig) {
 		return
 	}
 
-	fmt.Printf("  %s %s\n", stepInfo, dimText.Render(fmt.Sprintf("Installing dependencies with %s...", pkgMgr)))
+	absTarget, err := filepath.Abs(cfg.TargetPath)
+	if err != nil {
+		absTarget = cfg.TargetPath
+	}
+
+	fwName := cfg.Framework.Name
+	if fwName == "" {
+		fwName = "Node.js"
+	}
+
+	fmt.Printf("  %s %s\n", stepInfo, dimText.Render(fmt.Sprintf("Running '%s install' for %s (live logs enabled)...", pkgMgr, fwName)))
 	cmd := exec.Command(pkgMgr, "install")
-	cmd.Dir = cfg.TargetPath
-	if err := cmd.Run(); err != nil {
+	cmd.Dir = absTarget
+	if err := RunWithIdleTimeout(cmd, 120*time.Second); err != nil {
 		fmt.Printf("  %s %s\n", stepWarn, dimText.Render(fmt.Sprintf("%s install skipped or offline. Run '%s install' when ready.", pkgMgr, pkgMgr)))
 		return
 	}
@@ -221,26 +267,28 @@ func installNode(cfg *config.ProjectConfig) {
 }
 
 func runNodeSyncHooks(cfg *config.ProjectConfig) {
+	absTarget, _ := filepath.Abs(cfg.TargetPath)
+
 	switch cfg.Framework.ID {
 	case "nuxt":
 		cmd := exec.Command("npx", "nuxi", "prepare")
-		cmd.Dir = cfg.TargetPath
+		cmd.Dir = absTarget
 		_ = cmd.Run()
 	case "sveltekit":
 		cmd := exec.Command("npx", "svelte-kit", "sync")
-		cmd.Dir = cfg.TargetPath
+		cmd.Dir = absTarget
 		_ = cmd.Run()
 	case "astro":
 		cmd := exec.Command("npx", "astro", "sync")
-		cmd.Dir = cfg.TargetPath
+		cmd.Dir = absTarget
 		_ = cmd.Run()
 	}
 
 	// Prisma schema sync
-	prismaPath := filepath.Join(cfg.TargetPath, "prisma", "schema.prisma")
+	prismaPath := filepath.Join(absTarget, "prisma", "schema.prisma")
 	if _, err := os.Stat(prismaPath); err == nil {
 		cmd := exec.Command("npx", "prisma", "generate")
-		cmd.Dir = cfg.TargetPath
+		cmd.Dir = absTarget
 		_ = cmd.Run()
 	}
 }
@@ -255,19 +303,43 @@ func installPython(cfg *config.ProjectConfig) {
 			return
 		}
 
-		pipBin := filepath.Join(cfg.TargetPath, ".venv", "bin", "pip")
+		absTarget, err := filepath.Abs(cfg.TargetPath)
+		if err != nil {
+			absTarget = cfg.TargetPath
+		}
+
+		pipBin := filepath.Join(absTarget, ".venv", "bin", "pip")
+		pyBin := filepath.Join(absTarget, ".venv", "bin", "python")
 		if runtime.GOOS == "windows" {
-			pipBin = filepath.Join(cfg.TargetPath, ".venv", "Scripts", "pip.exe")
+			pipBin = filepath.Join(absTarget, ".venv", "Scripts", "pip.exe")
+			pyBin = filepath.Join(absTarget, ".venv", "Scripts", "python.exe")
 		}
 
 		reqFile := filepath.Join(cfg.TargetPath, "requirements.txt")
 		if _, err := os.Stat(reqFile); err == nil && fileExists(pipBin) {
+			fwName := cfg.Framework.Name
+			if fwName == "" {
+				fwName = "Python"
+			}
+			fmt.Printf("  %s %s\n", stepInfo, dimText.Render(fmt.Sprintf("Running 'pip install' for %s (live logs enabled)...", fwName)))
 			pipCmd := exec.Command(pipBin, "install", "--disable-pip-version-check", "-r", "requirements.txt")
 			pipCmd.Dir = cfg.TargetPath
-			if err := pipCmd.Run(); err == nil {
-				fmt.Printf("  %s %s\n", stepSuccess, stepName.Render("Created .venv and installed Python packages"))
+			if err := RunWithIdleTimeout(pipCmd, 120*time.Second); err == nil {
+				// Verify installed version
+				verStr := ""
+				if cfg.Framework.ID == "django" {
+					verCmd := exec.Command(pyBin, "-m", "django", "--version")
+					if out, vErr := verCmd.Output(); vErr == nil {
+						verStr = fmt.Sprintf(" (Django %s)", strings.TrimSpace(string(out)))
+					}
+				} else if cfg.Framework.ID == "fastapi" {
+					verStr = " (FastAPI)"
+				}
+				fmt.Printf("  %s %s\n", stepSuccess, stepName.Render(fmt.Sprintf("Created .venv and installed Python packages%s", verStr)))
 				return
 			}
+			fmt.Printf("  %s %s\n", stepWarn, dimText.Render("pip install skipped or failed. Run 'pip install -r requirements.txt' when ready."))
+			return
 		}
 		fmt.Printf("  %s %s\n", stepSuccess, stepName.Render("Created Python virtual environment (.venv)"))
 	} else if cfg.Docker {
@@ -279,9 +351,11 @@ func installPython(cfg *config.ProjectConfig) {
 
 func installGo(cfg *config.ProjectConfig) {
 	if _, err := exec.LookPath("go"); err == nil {
+		absTarget, _ := filepath.Abs(cfg.TargetPath)
+		fmt.Printf("  %s %s\n", stepInfo, dimText.Render("Running 'go mod tidy' (live logs enabled)..."))
 		cmd := exec.Command("go", "mod", "tidy")
-		cmd.Dir = cfg.TargetPath
-		if err := cmd.Run(); err == nil {
+		cmd.Dir = absTarget
+		if err := RunWithIdleTimeout(cmd, 120*time.Second); err == nil {
 			fmt.Printf("  %s %s\n", stepSuccess, stepName.Render("Synchronized Go modules (go mod tidy)"))
 		} else {
 			fmt.Printf("  %s %s\n", stepWarn, dimText.Render("go mod tidy skipped or offline. Run 'go mod tidy' when online."))
@@ -295,10 +369,14 @@ func installGo(cfg *config.ProjectConfig) {
 
 func installRust(cfg *config.ProjectConfig) {
 	if _, err := exec.LookPath("cargo"); err == nil {
+		absTarget, _ := filepath.Abs(cfg.TargetPath)
+		fmt.Printf("  %s %s\n", stepInfo, dimText.Render("Running 'cargo check' (live logs enabled)..."))
 		cmd := exec.Command("cargo", "check")
-		cmd.Dir = cfg.TargetPath
-		if err := cmd.Run(); err == nil {
+		cmd.Dir = absTarget
+		if err := RunWithIdleTimeout(cmd, 120*time.Second); err == nil {
 			fmt.Printf("  %s %s\n", stepSuccess, stepName.Render("Cargo verified dependencies (cargo check)"))
+		} else {
+			fmt.Printf("  %s %s\n", stepWarn, dimText.Render("cargo check skipped or offline. Run 'cargo check' when online."))
 		}
 	} else if cfg.Docker {
 		fmt.Printf("  %s %s\n", stepSuccess, stepName.Render("Containerized Rust build pre-configured (ready for 'docker compose up')"))
@@ -309,13 +387,77 @@ func installRust(cfg *config.ProjectConfig) {
 
 func installFlutter(cfg *config.ProjectConfig) {
 	if _, err := exec.LookPath("flutter"); err == nil {
+		absTarget, _ := filepath.Abs(cfg.TargetPath)
+		fmt.Printf("  %s %s\n", stepInfo, dimText.Render("Running 'flutter pub get' (live logs enabled)..."))
 		cmd := exec.Command("flutter", "pub", "get")
-		cmd.Dir = cfg.TargetPath
-		if err := cmd.Run(); err == nil {
+		cmd.Dir = absTarget
+		if err := RunWithIdleTimeout(cmd, 120*time.Second); err == nil {
 			fmt.Printf("  %s %s\n", stepSuccess, stepName.Render("Resolved Flutter packages (flutter pub get)"))
+		} else {
+			fmt.Printf("  %s %s\n", stepWarn, dimText.Render("flutter pub get skipped or offline."))
 		}
 	} else {
 		fmt.Printf("  %s %s\n", stepWarn, dimText.Render("Flutter not found on host. Run 'ace doctor' to check SDK."))
+	}
+}
+
+func installDotnet(cfg *config.ProjectConfig) {
+	if _, err := exec.LookPath("dotnet"); err == nil {
+		absTarget, _ := filepath.Abs(cfg.TargetPath)
+		fmt.Printf("  %s %s\n", stepInfo, dimText.Render("Running 'dotnet restore' (live logs enabled)..."))
+		cmd := exec.Command("dotnet", "restore")
+		cmd.Dir = absTarget
+		if err := RunWithIdleTimeout(cmd, 120*time.Second); err == nil {
+			fmt.Printf("  %s %s\n", stepSuccess, stepName.Render("Restored .NET packages (dotnet restore)"))
+		} else {
+			fmt.Printf("  %s %s\n", stepWarn, dimText.Render("dotnet restore skipped or offline. Run 'dotnet restore' when ready."))
+		}
+	} else if cfg.Docker {
+		fmt.Printf("  %s %s\n", stepSuccess, stepName.Render("Containerized .NET build pre-configured (ready for 'docker compose up')"))
+	} else {
+		fmt.Printf("  %s %s\n", stepWarn, dimText.Render(".NET SDK not found on host. Run 'ace doctor' or use --docker."))
+	}
+}
+
+func installJava(cfg *config.ProjectConfig) {
+	mvnBin := "mvn"
+	absTarget, _ := filepath.Abs(cfg.TargetPath)
+	if fileExists(filepath.Join(absTarget, "mvnw")) {
+		mvnBin = "./mvnw"
+	} else if _, err := exec.LookPath("mvn"); err != nil {
+		if cfg.Docker {
+			fmt.Printf("  %s %s\n", stepSuccess, stepName.Render("Containerized Maven build pre-configured (ready for 'docker compose up')"))
+		} else {
+			fmt.Printf("  %s %s\n", stepWarn, dimText.Render("Maven / Java not found on host. Run 'ace doctor' or use --docker."))
+		}
+		return
+	}
+
+	fmt.Printf("  %s %s\n", stepInfo, dimText.Render("Resolving Maven dependencies (live logs enabled)..."))
+	cmd := exec.Command(mvnBin, "dependency:resolve", "-q")
+	cmd.Dir = absTarget
+	if err := RunWithIdleTimeout(cmd, 120*time.Second); err == nil {
+		fmt.Printf("  %s %s\n", stepSuccess, stepName.Render("Resolved Maven dependencies"))
+	} else {
+		fmt.Printf("  %s %s\n", stepWarn, dimText.Render("Maven dependency resolution skipped. Run 'mvn compile' when ready."))
+	}
+}
+
+func installRails(cfg *config.ProjectConfig) {
+	if _, err := exec.LookPath("bundle"); err == nil {
+		absTarget, _ := filepath.Abs(cfg.TargetPath)
+		fmt.Printf("  %s %s\n", stepInfo, dimText.Render("Running 'bundle install' for Ruby on Rails (live logs enabled)..."))
+		cmd := exec.Command("bundle", "install")
+		cmd.Dir = absTarget
+		if err := RunWithIdleTimeout(cmd, 120*time.Second); err == nil {
+			fmt.Printf("  %s %s\n", stepSuccess, stepName.Render("Installed Bundler gems"))
+		} else {
+			fmt.Printf("  %s %s\n", stepWarn, dimText.Render("bundle install skipped or offline. Run 'bundle install' when ready."))
+		}
+	} else if cfg.Docker {
+		fmt.Printf("  %s %s\n", stepSuccess, stepName.Render("Containerized Ruby pre-configured (ready for 'docker compose up')"))
+	} else {
+		fmt.Printf("  %s %s\n", stepWarn, dimText.Render("Bundler not found on host. Run 'gem install bundler' or use --docker."))
 	}
 }
 

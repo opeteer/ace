@@ -31,10 +31,10 @@ func GenerateCompose(cfg *config.ProjectConfig) error {
 		sb.WriteString("    volumes:\n")
 		sb.WriteString("      - ./:/var/www/html\n")
 		sb.WriteString("      - app_vendor:/var/www/html/vendor\n")
-	case "fastapi":
+	case "fastapi", "django":
 		sb.WriteString("    volumes:\n")
 		sb.WriteString("      - ./:/app\n")
-	case "fiber":
+	case "fiber", "gin":
 		sb.WriteString("    volumes:\n")
 		sb.WriteString("      - ./:/app\n")
 	}

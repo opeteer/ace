@@ -183,3 +183,99 @@ func RenderReport(diagnostics []ToolDiagnostic) string {
 
 	return b.String()
 }
+
+// PrintProjectReport prints the scoped project diagnostic report as UI or JSON
+func PrintProjectReport(report *ProjectDiagnosticReport, asJSON bool) error {
+	if asJSON {
+		out, err := report.ToJSON()
+		if err != nil {
+			return err
+		}
+		fmt.Println(out)
+		return nil
+	}
+
+	fmt.Println(RenderProjectReport(report))
+	return nil
+}
+
+// RenderProjectReport renders a scoped project diagnostic report
+func RenderProjectReport(report *ProjectDiagnosticReport) string {
+	var b strings.Builder
+
+	b.WriteString(titleStyle.Render(fmt.Sprintf("🩺 Ace Project Doctor: %s (%s)", report.Framework, report.Language)) + "\n")
+	if report.ProjectPath != "-" {
+		b.WriteString(lipgloss.NewStyle().Foreground(lipgloss.Color("#666666")).Render(fmt.Sprintf("Auditing requirements for %s at %s...", report.ProjectName, report.ProjectPath)) + "\n")
+	} else {
+		b.WriteString(lipgloss.NewStyle().Foreground(lipgloss.Color("#666666")).Render(fmt.Sprintf("Auditing host readiness for %s...", report.Framework)) + "\n")
+	}
+
+	// Group checks by category
+	categories := []string{"Toolchain", "Dependencies", "Configuration"}
+	grouped := make(map[string][]ProjectCheckItem)
+	for _, c := range report.Checks {
+		cat := c.Category
+		if cat == "" {
+			cat = "Toolchain"
+		}
+		grouped[cat] = append(grouped[cat], c)
+	}
+
+	for _, cat := range categories {
+		items, exists := grouped[cat]
+		if !exists || len(items) == 0 {
+			continue
+		}
+
+		b.WriteString(fmt.Sprintf("\n%s\n", categoryStyle.Render("── "+cat+" ──")))
+		for _, item := range items {
+			var statusBadge string
+			if item.Status == StatusOK {
+				statusBadge = badgeOK
+			} else {
+				statusBadge = badgeMissing
+			}
+
+			cur := item.Current
+			if cur == "" {
+				cur = "-"
+			}
+
+			b.WriteString(fmt.Sprintf("  %s %s %s %s\n",
+				statusBadge,
+				toolNameStyle.Render(item.Name),
+				versionStyle.Render(cur),
+				stacksStyle.Render(item.Detail),
+			))
+
+			if item.Status == StatusMissing && item.InstallHelp != "" {
+				b.WriteString(fmt.Sprintf("             └─ %s\n", helpStyle.Render("Fix: "+item.InstallHelp)))
+			}
+		}
+	}
+
+	// Project Summary Box
+	var summary strings.Builder
+	if report.IsReady {
+		summary.WriteString(lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("#00FF87")).Render("✔ Project Status: Ready to develop and run!\n\n"))
+		if len(report.NextSteps) > 0 {
+			summary.WriteString(lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("#FAFAFA")).Render("Next Steps:\n"))
+			for _, step := range report.NextSteps {
+				summary.WriteString(fmt.Sprintf("  %s\n", lipgloss.NewStyle().Foreground(lipgloss.Color("#00D7D7")).Render(step)))
+			}
+			summary.WriteString("\n")
+		}
+	} else {
+		summary.WriteString(lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("#FF5F56")).Render("✖ Project Status: Action required to run project\n\n"))
+		summary.WriteString(lipgloss.NewStyle().Foreground(lipgloss.Color("#FAFAFA")).Render("Resolve the missing checks above to run this project natively.\n\n"))
+	}
+
+	summary.WriteString(fmt.Sprintf("%s %s",
+		lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("#7D56F4")).Render("💡 Host Audit:"),
+		lipgloss.NewStyle().Foreground(lipgloss.Color("#888888")).Render("Run 'ace doctor --all' (or outside a project) to audit all 19 universal toolchains."),
+	))
+
+	b.WriteString("\n" + summaryBox.Render(summary.String()))
+	return b.String()
+}
+

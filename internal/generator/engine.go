@@ -119,10 +119,40 @@ func (e *Engine) scaffoldFramework() error {
 		return framework.ScaffoldLaravel(e.cfg)
 	case "fastapi":
 		return framework.ScaffoldFastAPI(e.cfg)
+	case "django":
+		return framework.ScaffoldDjango(e.cfg)
 	case "next":
 		return framework.ScaffoldNextJS(e.cfg)
+	case "nuxt":
+		return framework.ScaffoldNuxt(e.cfg)
+	case "sveltekit":
+		return framework.ScaffoldSvelteKit(e.cfg)
+	case "astro":
+		return framework.ScaffoldAstro(e.cfg)
+	case "express":
+		return framework.ScaffoldExpress(e.cfg)
+	case "nestjs":
+		return framework.ScaffoldNestJS(e.cfg)
+	case "vite-react":
+		return framework.ScaffoldReact(e.cfg)
+	case "vite-vue":
+		return framework.ScaffoldVue(e.cfg)
 	case "fiber":
 		return framework.ScaffoldFiber(e.cfg)
+	case "gin":
+		return framework.ScaffoldGin(e.cfg)
+	case "axum":
+		return framework.ScaffoldAxum(e.cfg)
+	case "aspnet":
+		return framework.ScaffoldAspNet(e.cfg)
+	case "springboot":
+		return framework.ScaffoldSpringBoot(e.cfg)
+	case "flutter":
+		return framework.ScaffoldFlutter(e.cfg)
+	case "expo":
+		return framework.ScaffoldExpo(e.cfg)
+	case "rails":
+		return framework.ScaffoldRails(e.cfg)
 	default:
 		// Generic fallback generator for other frameworks
 		return framework.ScaffoldGeneric(e.cfg)

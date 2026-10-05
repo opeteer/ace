@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 
 	"github.com/opeteer/ace/internal/config"
 )
@@ -98,6 +99,44 @@ venv/
 .env
 `
 
+	case "django":
+		pkgName := strings.ReplaceAll(strings.ToLower(cfg.Name), "-", "_")
+		dockerfile = fmt.Sprintf(`FROM python:3.12-slim
+
+# Prevent Python from writing .pyc and buffer stdout
+ENV PYTHONDONTWRITEBYTECODE=1
+ENV PYTHONUNBUFFERED=1
+
+WORKDIR /app
+
+# Install dependencies
+COPY requirements.txt .
+RUN pip install --no-cache-dir -r requirements.txt
+
+# Copy application code
+COPY . .
+
+EXPOSE 8000
+
+CMD ["gunicorn", "--bind", "0.0.0.0:8000", "--workers", "3", "%s.wsgi:application"]
+`, pkgName)
+		dockerignore = `__pycache__
+*.pyc
+*.pyo
+*.pyd
+.Python
+.venv
+env/
+venv/
+staticfiles/
+media/
+.git
+.gitignore
+.env
+db.sqlite3
+`
+
+
 	case "next":
 		dockerfile = `FROM node:20-alpine AS base
 
@@ -144,7 +183,7 @@ CMD ["node", "server.js"]
 .env*.local
 `
 
-	case "fiber":
+	case "fiber", "gin":
 		dockerfile = `FROM golang:1.22-alpine AS builder
 
 WORKDIR /app
@@ -178,6 +217,285 @@ CMD ["/app/server"]
 .env
 `
 
+	case "axum":
+		binName := strings.ReplaceAll(strings.ToLower(cfg.Name), "-", "_")
+		dockerfile = fmt.Sprintf(`FROM rust:1.78-alpine AS builder
+
+WORKDIR /app
+RUN apk add --no-cache musl-dev
+
+COPY Cargo.toml Cargo.lock* ./
+COPY src ./src
+
+RUN cargo build --release
+
+# Production image
+FROM alpine:3.20
+
+WORKDIR /app
+RUN apk --no-cache add ca-certificates
+
+COPY --from=builder /app/target/release/%s /app/server
+
+EXPOSE %%d
+
+CMD ["/app/server"]
+`, binName)
+		dockerfile = fmt.Sprintf(dockerfile, cfg.Framework.DefaultPort)
+		dockerignore = `target/
+.git
+.gitignore
+.env
+`
+
+	case "aspnet":
+		projName := pascalCase(cfg.Name)
+		dockerfile = fmt.Sprintf(`FROM mcr.microsoft.com/dotnet/sdk:8.0 AS builder
+WORKDIR /app
+
+COPY *.csproj ./
+RUN dotnet restore
+
+COPY . ./
+RUN dotnet publish -c Release -o /app/out
+
+# Production image
+FROM mcr.microsoft.com/dotnet/aspnet:8.0-alpine AS runner
+WORKDIR /app
+COPY --from=builder /app/out .
+
+EXPOSE %d
+ENV ASPNETCORE_URLS=http://+:%d
+ENTRYPOINT ["dotnet", "%s.dll"]
+`, cfg.Framework.DefaultPort, cfg.Framework.DefaultPort, projName)
+		dockerignore = `bin/
+obj/
+.git
+.gitignore
+.env
+`
+
+	case "springboot":
+		dockerfile = fmt.Sprintf(`FROM eclipse-temurin:21-jdk-alpine AS builder
+WORKDIR /app
+
+COPY pom.xml ./
+RUN apk add --no-cache maven && mvn dependency:go-offline || true
+
+COPY src ./src
+RUN mvn clean package -DskipTests
+
+# Production image
+FROM eclipse-temurin:21-jre-alpine AS runner
+WORKDIR /app
+COPY --from=builder /app/target/*.jar /app/app.jar
+
+EXPOSE %d
+
+CMD ["java", "-jar", "/app/app.jar"]
+`, cfg.Framework.DefaultPort)
+		dockerignore = `target/
+.git
+.gitignore
+.env
+`
+
+	case "express":
+		dockerfile = fmt.Sprintf(`FROM node:20-alpine AS builder
+WORKDIR /app
+
+COPY package.json package-lock.json* yarn.lock* pnpm-lock.yaml* bun.lockb* ./
+RUN npm install
+
+COPY . .
+RUN npm run build
+
+# Production image
+FROM node:20-alpine AS runner
+WORKDIR /app
+ENV NODE_ENV=production
+
+COPY --from=builder /app/package.json ./
+COPY --from=builder /app/node_modules ./node_modules
+COPY --from=builder /app/dist ./dist
+
+EXPOSE %d
+
+CMD ["node", "dist/index.js"]
+`, cfg.Framework.DefaultPort)
+		dockerignore = `node_modules
+dist
+.git
+.gitignore
+.env
+`
+
+	case "nestjs":
+		dockerfile = fmt.Sprintf(`FROM node:20-alpine AS builder
+WORKDIR /app
+
+COPY package.json package-lock.json* yarn.lock* pnpm-lock.yaml* bun.lockb* ./
+RUN npm install
+
+COPY . .
+RUN npm run build
+
+# Production image
+FROM node:20-alpine AS runner
+WORKDIR /app
+ENV NODE_ENV=production
+
+COPY --from=builder /app/package.json ./
+COPY --from=builder /app/node_modules ./node_modules
+COPY --from=builder /app/dist ./dist
+
+EXPOSE %d
+
+CMD ["node", "dist/main.js"]
+`, cfg.Framework.DefaultPort)
+		dockerignore = `node_modules
+dist
+.git
+.gitignore
+.env
+`
+
+	case "nuxt":
+		dockerfile = fmt.Sprintf(`FROM node:20-alpine AS builder
+WORKDIR /app
+
+COPY package.json package-lock.json* yarn.lock* pnpm-lock.yaml* bun.lockb* ./
+RUN npm install
+
+COPY . .
+RUN npm run build
+
+# Production image
+FROM node:20-alpine AS runner
+WORKDIR /app
+ENV NODE_ENV=production
+
+COPY --from=builder /app/.output ./.output
+
+EXPOSE %d
+
+CMD ["node", ".output/server/index.mjs"]
+`, cfg.Framework.DefaultPort)
+		dockerignore = `node_modules
+.output
+.nuxt
+.git
+.gitignore
+.env
+`
+
+	case "sveltekit":
+		dockerfile = fmt.Sprintf(`FROM node:20-alpine AS builder
+WORKDIR /app
+
+COPY package.json package-lock.json* yarn.lock* pnpm-lock.yaml* bun.lockb* ./
+RUN npm install
+
+COPY . .
+RUN npm run build
+
+# Production image
+FROM node:20-alpine AS runner
+WORKDIR /app
+ENV NODE_ENV=production
+
+COPY --from=builder /app/build ./build
+COPY --from=builder /app/package.json ./
+
+EXPOSE %d
+
+CMD ["node", "build"]
+`, cfg.Framework.DefaultPort)
+		dockerignore = `node_modules
+build
+.svelte-kit
+.git
+.gitignore
+.env
+`
+
+	case "astro":
+		dockerfile = fmt.Sprintf(`FROM node:20-alpine AS builder
+WORKDIR /app
+
+COPY package.json package-lock.json* yarn.lock* pnpm-lock.yaml* bun.lockb* ./
+RUN npm install
+
+COPY . .
+RUN npm run build
+
+# Production image
+FROM node:20-alpine AS runner
+WORKDIR /app
+ENV NODE_ENV=production
+
+COPY --from=builder /app/dist ./dist
+COPY --from=builder /app/package.json ./
+
+EXPOSE %d
+
+CMD ["npx", "astro", "preview", "--host", "0.0.0.0", "--port", "%d"]
+`, cfg.Framework.DefaultPort, cfg.Framework.DefaultPort)
+		dockerignore = `node_modules
+dist
+.astro
+.git
+.gitignore
+.env
+`
+
+	case "vite-react", "vite-vue":
+		dockerfile = `FROM node:20-alpine AS builder
+WORKDIR /app
+
+COPY package.json package-lock.json* yarn.lock* pnpm-lock.yaml* bun.lockb* ./
+RUN npm install
+
+COPY . .
+RUN npm run build
+
+# Production web server
+FROM nginx:alpine AS runner
+COPY --from=builder /app/dist /usr/share/nginx/html
+EXPOSE 80
+
+CMD ["nginx", "-g", "daemon off;"]
+`
+		dockerignore = `node_modules
+dist
+.git
+.gitignore
+.env
+`
+
+	case "rails":
+		dockerfile = fmt.Sprintf(`FROM ruby:3.2-alpine
+
+WORKDIR /app
+RUN apk add --no-cache build-base tzdata nodejs
+
+COPY Gemfile Gemfile.lock* ./
+RUN bundle install
+
+COPY . .
+
+EXPOSE %d
+
+CMD ["bundle", "exec", "puma", "-C", "config/puma.rb"]
+`, cfg.Framework.DefaultPort)
+		dockerignore = `/.bundle
+/log/*
+/tmp/*
+.git
+.gitignore
+.env
+`
+
 	default:
 		dockerfile = fmt.Sprintf(`FROM alpine:latest
 WORKDIR /app
@@ -200,4 +518,21 @@ vendor/
 	}
 
 	return nil
+}
+
+func pascalCase(s string) string {
+	parts := strings.FieldsFunc(s, func(r rune) bool {
+		return r == '-' || r == '_' || r == ' ' || r == '.'
+	})
+	var b strings.Builder
+	for _, p := range parts {
+		if len(p) > 0 {
+			b.WriteString(strings.ToUpper(p[:1]) + strings.ToLower(p[1:]))
+		}
+	}
+	res := b.String()
+	if res == "" {
+		return "AceApp"
+	}
+	return res
 }
