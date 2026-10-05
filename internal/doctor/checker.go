@@ -26,6 +26,7 @@ type ToolDiagnostic struct {
 	Path           string     `json:"path,omitempty"`
 	MinVersion     string     `json:"min_version,omitempty"`
 	InstallHelp    string     `json:"install_help,omitempty"`
+	Provisionable  bool       `json:"provisionable"`
 	UnlockedStacks []string   `json:"unlocked_stacks"`
 }
 
@@ -234,6 +235,7 @@ func checkTool(spec ToolSpec) ToolDiagnostic {
 			Status:         StatusMissing,
 			MinVersion:     spec.MinVersion,
 			InstallHelp:    spec.InstallHelp,
+			Provisionable:  IsProvisionable(spec.Binary),
 			UnlockedStacks: spec.UnlockedStacks,
 		}
 	}
@@ -257,6 +259,7 @@ func checkTool(spec ToolSpec) ToolDiagnostic {
 		Version:        versionStr,
 		Path:           path,
 		MinVersion:     spec.MinVersion,
+		Provisionable:  IsProvisionable(spec.Binary),
 		UnlockedStacks: spec.UnlockedStacks,
 	}
 }

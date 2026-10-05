@@ -7,6 +7,7 @@ import (
 
 	"github.com/opeteer/ace/internal/config"
 	"github.com/opeteer/ace/internal/generator"
+	"github.com/opeteer/ace/internal/generator/installer"
 )
 
 func TestInstallerSkipNoInstall(t *testing.T) {
@@ -41,5 +42,18 @@ func TestInstallerSkipNoInstall(t *testing.T) {
 	venvPath := filepath.Join(targetDir, ".venv")
 	if _, err := os.Stat(venvPath); err == nil {
 		t.Errorf("Expected .venv to NOT exist when NoInstall=true")
+	}
+}
+
+func TestInstallDirectoryNoManifest(t *testing.T) {
+	tempDir, err := os.MkdirTemp("", "ace-test-empty-*")
+	if err != nil {
+		t.Fatalf("Failed to create temp dir: %v", err)
+	}
+	defer os.RemoveAll(tempDir)
+
+	err = installer.InstallDirectory(tempDir)
+	if err == nil {
+		t.Fatal("Expected error when running InstallDirectory on directory with no manifest")
 	}
 }

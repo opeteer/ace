@@ -159,6 +159,21 @@ func RenderReport(diagnostics []ToolDiagnostic) string {
 		))
 	}
 
+	// Count provisionable missing tools
+	var provMissing []string
+	for _, d := range diagnostics {
+		if d.Status == StatusMissing && d.Provisionable {
+			provMissing = append(provMissing, d.Name)
+		}
+	}
+
+	if len(provMissing) > 0 {
+		summaryContent.WriteString(fmt.Sprintf("\n%s %s\n",
+			lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("#00FF87")).Render("Auto-Fix:"),
+			lipgloss.NewStyle().Foreground(lipgloss.Color("#FAFAFA")).Render(fmt.Sprintf("Run 'ace install --missing' (or 'ace doctor --fix') to install %d missing tool(s) (%s).", len(provMissing), strings.Join(provMissing, ", "))),
+		))
+	}
+
 	summaryContent.WriteString(fmt.Sprintf("\n%s %s",
 		lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("#7D56F4")).Render("Pro-Tip:"),
 		lipgloss.NewStyle().Foreground(lipgloss.Color("#888888")).Render("Ace generates multi-stage Docker builds. Use --docker to run any stack even without local runtimes!"),

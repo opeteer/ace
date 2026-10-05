@@ -9,6 +9,7 @@ import (
 
 	"github.com/charmbracelet/lipgloss"
 	"github.com/opeteer/ace/internal/config"
+	"github.com/opeteer/ace/internal/doctor"
 )
 
 var (
@@ -53,6 +54,76 @@ func Run(cfg *config.ProjectConfig) {
 	}
 }
 
+// InstallDirectory inspects an existing project directory, auto-detects its ecosystem, and installs dependencies
+func InstallDirectory(targetDir string) error {
+	if targetDir == "" {
+		targetDir = "."
+	}
+	targetDir = filepath.Clean(targetDir)
+
+	stat, err := os.Stat(targetDir)
+	if err != nil || !stat.IsDir() {
+		return fmt.Errorf("directory '%s' does not exist or is not a directory", targetDir)
+	}
+
+	detected := false
+
+	// Check Composer / PHP
+	if fileExists(filepath.Join(targetDir, "composer.json")) {
+		detected = true
+		cfg := &config.ProjectConfig{TargetPath: targetDir, Framework: config.FrameworkSpec{ID: "laravel"}}
+		installLaravel(cfg)
+	}
+
+	// Check Node.js
+	if fileExists(filepath.Join(targetDir, "package.json")) {
+		detected = true
+		cfg := &config.ProjectConfig{TargetPath: targetDir}
+		if fileExists(filepath.Join(targetDir, "nuxt.config.ts")) || fileExists(filepath.Join(targetDir, "nuxt.config.js")) {
+			cfg.Framework.ID = "nuxt"
+		} else if fileExists(filepath.Join(targetDir, "svelte.config.js")) {
+			cfg.Framework.ID = "sveltekit"
+		} else if fileExists(filepath.Join(targetDir, "astro.config.mjs")) {
+			cfg.Framework.ID = "astro"
+		}
+		installNode(cfg)
+	}
+
+	// Check Python
+	if fileExists(filepath.Join(targetDir, "requirements.txt")) || fileExists(filepath.Join(targetDir, "pyproject.toml")) {
+		detected = true
+		cfg := &config.ProjectConfig{TargetPath: targetDir}
+		installPython(cfg)
+	}
+
+	// Check Go
+	if fileExists(filepath.Join(targetDir, "go.mod")) {
+		detected = true
+		cfg := &config.ProjectConfig{TargetPath: targetDir}
+		installGo(cfg)
+	}
+
+	// Check Rust
+	if fileExists(filepath.Join(targetDir, "Cargo.toml")) {
+		detected = true
+		cfg := &config.ProjectConfig{TargetPath: targetDir}
+		installRust(cfg)
+	}
+
+	// Check Flutter
+	if fileExists(filepath.Join(targetDir, "pubspec.yaml")) {
+		detected = true
+		cfg := &config.ProjectConfig{TargetPath: targetDir}
+		installFlutter(cfg)
+	}
+
+	if !detected {
+		return fmt.Errorf("no supported project manifest (package.json, composer.json, requirements.txt, go.mod, Cargo.toml, pubspec.yaml) found in '%s'", targetDir)
+	}
+
+	return nil
+}
+
 func installLaravel(cfg *config.ProjectConfig) {
 	if _, err := exec.LookPath("composer"); err == nil {
 		fmt.Printf("  %s %s\n", stepInfo, dimText.Render("Running 'composer install' for Laravel 11..."))
@@ -63,10 +134,25 @@ func installLaravel(cfg *config.ProjectConfig) {
 		} else {
 			fmt.Printf("  %s %s\n", stepWarn, dimText.Render("Composer install skipped or offline. Run 'composer install'."))
 		}
+	} else if doctor.IsToolInstalled("php") {
+		fmt.Printf("  %s %s\n", stepInfo, dimText.Render("Composer not found on host. Downloading Composer..."))
+		if err := doctor.InstallSpecificTool("composer"); err == nil {
+			localBin, _ := doctor.GetUserLocalBin()
+			compBin := filepath.Join(localBin, "composer")
+			cmd := exec.Command(compBin, "install", "--no-interaction", "--prefer-dist", "--no-progress")
+			cmd.Dir = cfg.TargetPath
+			if err := cmd.Run(); err == nil {
+				fmt.Printf("  %s %s\n", stepSuccess, stepName.Render("Installed Composer dependencies"))
+				return
+			}
+		}
+		if cfg.Docker {
+			fmt.Printf("  %s %s\n", stepSuccess, stepName.Render("Containerized Composer pre-configured (ready for 'docker compose up --build')"))
+		}
 	} else if cfg.Docker {
 		fmt.Printf("  %s %s\n", stepSuccess, stepName.Render("Containerized Composer pre-configured (ready for 'docker compose up --build')"))
 	} else {
-		fmt.Printf("  %s %s\n", stepWarn, dimText.Render("Composer not found on host. Run 'ace doctor' or use --docker."))
+		fmt.Printf("  %s %s\n", stepWarn, dimText.Render("Composer not found on host. Run 'ace install composer' or use --docker."))
 	}
 }
 

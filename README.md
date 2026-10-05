@@ -51,7 +51,19 @@ ace doctor
 ace doctor --json
 ```
 
-### 2. Interactive Wizard
+### 2. Universal Dependency Installer (`ace install` / `ace i`)
+Auto-detects the project type in the current directory (Node.js, Composer, Python, Go, Cargo, Flutter) and installs all dependencies and framework sync hooks:
+```bash
+# Inside any project:
+ace install
+# or shorthand:
+ace i
+
+# Or specify a target path:
+ace install ./my-project
+```
+
+### 3. Interactive Wizard
 Run without flags to open the interactive selection wizard:
 ```bash
 ace new
@@ -59,7 +71,7 @@ ace new
 ace create my-app
 ```
 
-### 2. Laravel + PostgreSQL + Docker + Nginx + GitHub Actions
+### 4. Laravel + PostgreSQL + Docker + Nginx + GitHub Actions
 ```bash
 ./bin/ace new my-laravel-app \
   -f laravel \
